@@ -39,7 +39,7 @@ static DEFINE_MUTEX(device_list_mutex);
 static struct class pwm_class;
 static struct workqueue_struct *pwm_handler_workqueue;
 
-static int pwm_match_name(struct device *dev, void *name)
+static int pwm_match_name(struct device *dev, const void *name)
 {
 	return !strcmp(name, dev_name(dev));
 }
