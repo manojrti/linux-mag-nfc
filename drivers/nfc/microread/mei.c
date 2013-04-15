@@ -19,15 +19,12 @@
  */
 
 #include <linux/module.h>
-#include <linux/slab.h>
-#include <linux/interrupt.h>
-#include <linux/gpio.h>
-#include <linux/mei_cl_bus.h>
-
+#include <linux/mod_devicetable.h>
 #include <linux/nfc.h>
 #include <net/nfc/hci.h>
 #include <net/nfc/llc.h>
 
+#include "../mei_phy.h"
 #include "microread.h"
 
 #define MICROREAD_DRIVER_NAME "microread"
@@ -149,21 +146,18 @@ static struct nfc_phy_ops mei_phy_ops = {
 static int microread_mei_probe(struct mei_cl_device *device,
 			       const struct mei_cl_device_id *id)
 {
-	struct microread_mei_phy *phy;
+	struct nfc_mei_phy *phy;
 	int r;
 
 	pr_info("Probing NFC microread\n");
 
-	phy = kzalloc(sizeof(struct microread_mei_phy), GFP_KERNEL);
+	phy = nfc_mei_phy_alloc(device);
 	if (!phy) {
 		pr_err("Cannot allocate memory for microread mei phy.\n");
 		return -ENOMEM;
 	}
 
-	phy->device = device;
-	mei_cl_set_drvdata(device, phy);
-
-	r = mei_cl_register_event_cb(device, microread_event_cb, phy);
+	r = mei_cl_register_event_cb(device, nfc_mei_event_cb, phy);
 	if (r) {
 		pr_err(MICROREAD_DRIVER_NAME ": event cb registration failed\n");
 		goto err_out;
@@ -178,23 +172,22 @@ static int microread_mei_probe(struct mei_cl_device *device,
 	return 0;
 
 err_out:
-	kfree(phy);
+	nfc_mei_phy_free(phy);
 
 	return r;
 }
 
 static int microread_mei_remove(struct mei_cl_device *device)
 {
-	struct microread_mei_phy *phy = mei_cl_get_drvdata(device);
+	struct nfc_mei_phy *phy = mei_cl_get_drvdata(device);
 
 	pr_info("Removing microread\n");
 
 	microread_remove(phy->hdev);
 
-	if (phy->powered)
-		microread_mei_disable(phy);
+	nfc_mei_phy_disable(phy);
 
-	kfree(phy);
+	nfc_mei_phy_free(phy);
 
 	return 0;
 }
