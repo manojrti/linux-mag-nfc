@@ -1613,6 +1613,14 @@ static int dlfb_usb_probe(struct usb_interface *interface,
 		goto error;
 	}
 
+	if (pixel_limit) {
+		pr_warn("DL chip limit of %d overridden"
+			" by module param to %d\n",
+			dev->sku_pixel_limit, pixel_limit);
+		dev->sku_pixel_limit = pixel_limit;
+	}
+
+
 	if (!dlfb_alloc_urb_list(dev, WRITES_IN_FLIGHT, MAX_TRANSFER)) {
 		retval = -ENOMEM;
 		pr_err("dlfb_alloc_urb_list failed\n");
