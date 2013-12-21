@@ -79,22 +79,32 @@ static int nfc_genl_send_target(struct sk_buff *msg, struct nfc_target *target,
 	genl_dump_check_consistent(cb, hdr, &nfc_genl_family);
 
 	if (nla_put_u32(msg, NFC_ATTR_TARGET_INDEX, target->idx) ||
-	    nla_put_u32(msg, NFC_ATTR_PROTOCOLS, target->supported_protocols) ||
-	    nla_put_u16(msg, NFC_ATTR_TARGET_SENS_RES, target->sens_res) ||
-	    nla_put_u8(msg, NFC_ATTR_TARGET_SEL_RES, target->sel_res))
+	    nla_put_u32(msg, NFC_ATTR_PROTOCOLS, target->supported_protocols))
 		goto nla_put_failure;
-	if (target->nfcid1_len > 0 &&
-	    nla_put(msg, NFC_ATTR_TARGET_NFCID1, target->nfcid1_len,
-		    target->nfcid1))
-		goto nla_put_failure;
-	if (target->sensb_res_len > 0 &&
-	    nla_put(msg, NFC_ATTR_TARGET_SENSB_RES, target->sensb_res_len,
-		    target->sensb_res))
-		goto nla_put_failure;
-	if (target->sensf_res_len > 0 &&
-	    nla_put(msg, NFC_ATTR_TARGET_SENSF_RES, target->sensf_res_len,
-		    target->sensf_res))
-		goto nla_put_failure;
+	if (target->is_iso15693) {
+		if (nla_put_u8(msg, NFC_ATTR_TARGET_ISO15693_DSFID,
+			       target->iso15693_dsfid) ||
+		    nla_put(msg, NFC_ATTR_TARGET_ISO15693_UID,
+			    sizeof(target->iso15693_uid), target->iso15693_uid))
+			goto nla_put_failure;
+	} else {
+		if (nla_put_u16(msg, NFC_ATTR_TARGET_SENS_RES,
+				target->sens_res) ||
+		    nla_put_u8(msg, NFC_ATTR_TARGET_SEL_RES, target->sel_res))
+			goto nla_put_failure;
+		if (target->nfcid1_len > 0 &&
+		    nla_put(msg, NFC_ATTR_TARGET_NFCID1, target->nfcid1_len,
+			    target->nfcid1))
+			goto nla_put_failure;
+		if (target->sensb_res_len > 0 &&
+		    nla_put(msg, NFC_ATTR_TARGET_SENSB_RES,
+			    target->sensb_res_len, target->sensb_res))
+			goto nla_put_failure;
+		if (target->sensf_res_len > 0 &&
+		    nla_put(msg, NFC_ATTR_TARGET_SENSF_RES,
+			    target->sensf_res_len, target->sensf_res))
+			goto nla_put_failure;
+	}
 
 	return genlmsg_end(msg, hdr);
 
@@ -178,7 +188,7 @@ int nfc_genl_targets_found(struct nfc_dev *dev)
 	struct sk_buff *msg;
 	void *hdr;
 
-	dev->genl_data.poll_req_pid = 0;
+	dev->genl_data.poll_req_portid = 0;
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_ATOMIC);
 	if (!msg)
@@ -755,7 +765,7 @@ static int nfc_genl_start_poll(struct sk_buff *skb, struct genl_info *info)
 
 	rc = nfc_start_poll(dev, im_protocols, tm_protocols);
 	if (!rc)
-		dev->genl_data.poll_req_pid = info->snd_pid;
+		dev->genl_data.poll_req_portid = info->snd_pid;
 
 	mutex_unlock(&dev->genl_data.genl_data_mutex);
 
@@ -789,13 +799,13 @@ static int nfc_genl_stop_poll(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_lock(&dev->genl_data.genl_data_mutex);
 
-	if (dev->genl_data.poll_req_pid != info->snd_pid) {
+	if (dev->genl_data.poll_req_portid != info->snd_pid) {
 		rc = -EBUSY;
 		goto out;
 	}
 
 	rc = nfc_stop_poll(dev);
-	dev->genl_data.poll_req_pid = 0;
+	dev->genl_data.poll_req_portid = 0;
 
 out:
 	mutex_unlock(&dev->genl_data.genl_data_mutex);
@@ -1472,9 +1482,9 @@ static void nfc_urelease_event_work(struct work_struct *work)
 	while (dev) {
 		mutex_lock(&dev->genl_data.genl_data_mutex);
 
-		if (dev->genl_data.poll_req_pid == w->pid) {
+		if (dev->genl_data.poll_req_portid == w->pid) {
 			nfc_stop_poll(dev);
-			dev->genl_data.poll_req_pid = 0;
+			dev->genl_data.poll_req_portid = 0;
 		}
 
 		mutex_unlock(&dev->genl_data.genl_data_mutex);
@@ -1513,7 +1523,7 @@ out:
 
 void nfc_genl_data_init(struct nfc_genl_data *genl_data)
 {
-	genl_data->poll_req_pid = 0;
+	genl_data->poll_req_portid = 0;
 	mutex_init(&genl_data->genl_data_mutex);
 }
 

@@ -36,6 +36,8 @@ enum {
 	NFC_DIGITAL_RF_TECH_212F,
 	NFC_DIGITAL_RF_TECH_424F,
 
+	NFC_DIGITAL_RF_TECH_ISO15693,
+
 	NFC_DIGITAL_RF_TECH_LAST,
 };
 
@@ -57,7 +59,25 @@ enum {
 	NFC_DIGITAL_FRAMING_NFCF_NFC_DEP,
 	NFC_DIGITAL_FRAMING_NFC_DEP_ACTIVATED,
 
+	NFC_DIGITAL_FRAMING_ISO15693_INVENTORY,
+	NFC_DIGITAL_FRAMING_ISO15693_EOF,
+	NFC_DIGITAL_FRAMING_ISO15693_TVT,	/* Type V Tag */
+
 	NFC_DIGITAL_FRAMING_LAST,
+};
+
+/**
+ * ISO 15693 Inventory request has 3 possible results: a response (UID is
+ * recieved), a collision occured, and no response.  The digital layer
+ * needs to know which one occured so it can perform the anit-collision
+ * procedure currectly.
+ */
+enum {
+	NFC_DIGITAL_ISO15693_INVENTORY_RESPONSE,
+	NFC_DIGITAL_ISO15693_INVENTORY_COLLSION,
+	NFC_DIGITAL_ISO15693_INVENTORY_NO_RESPONSE,
+
+	NFC_DIGITAL_ISO15693_INVENTORY_LAST,
 };
 
 #define DIGITAL_MDAA_NFCID1_SIZE 3

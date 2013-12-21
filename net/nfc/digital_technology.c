@@ -51,6 +51,9 @@
 #define DIGITAL_SENSF_REQ_RC_SC   1
 #define DIGITAL_SENSF_REQ_RC_AP   2
 
+#define DIGITAL_CMD_ISO15693_INVENTORY_REQ	0x01
+#define DIGITAL_ISO15693_RES_IS_VALID(flags)	(!((flags) & 0x01))
+
 struct digital_sdd_res {
 	u8 nfcid1[4];
 	u8 bcc;
@@ -81,6 +84,33 @@ struct digital_sensf_res {
 	u8 pad2;
 	u8 rd[2];
 } __packed;
+
+struct digital_iso15693_inv_req {
+	u8 flags;
+	u8 cmd;
+	u8 mask_len;
+	u64 mask;
+} __packed;
+
+struct digital_iso15693_inv_res {
+	u8 flags;
+	u8 dsfid;
+	u64 uid;
+} __packed;
+
+struct digital_iso15693_info {
+	struct list_head col_list;
+	struct mutex col_list_lock;
+	u8 slot;
+	u8 mask_len;
+	u64 mask;
+};
+
+struct digital_iso15693_col_entry {
+	struct list_head link;
+	u8 mask_len;
+	u64 mask;
+};
 
 static int digital_in_send_sdd_req(struct nfc_digital_dev *ddev,
 				   struct nfc_target *target);
@@ -469,6 +499,220 @@ int digital_in_send_sensf_req(struct nfc_digital_dev *ddev, u8 rf_tech)
 				 NULL);
 	if (rc)
 		kfree_skb(skb);
+
+	return rc;
+}
+
+static int digital_iso15693_info_init(struct digital_iso15693_info **infop)
+{
+	struct digital_iso15693_info *info;
+
+	info = kzalloc(sizeof(*info), GFP_KERNEL);
+	if (!info)
+		return -ENOMEM;
+
+	mutex_init(&info->col_list_lock);
+	INIT_LIST_HEAD(&info->col_list);
+
+	*infop = info;
+
+	return 0;
+}
+
+static void digital_iso15693_info_destroy(struct digital_iso15693_info *info)
+{
+	struct digital_iso15693_col_entry *col_entry, *n;
+
+	list_for_each_entry_safe(col_entry, n, &info->col_list, link) {
+		list_del(&col_entry->link);
+		kfree(col_entry);
+	}
+
+	mutex_destroy(&info->col_list_lock);
+	kfree(info);
+}
+
+static void digital_in_recv_iso15693_inv_res(struct nfc_digital_dev *ddev,
+		void *arg, struct sk_buff *resp);
+
+static int _digital_in_send_iso15693_inv_req(struct nfc_digital_dev *ddev,
+		struct digital_iso15693_info *info)
+{
+	struct digital_iso15693_inv_req *req;
+	struct sk_buff *skb;
+	unsigned int mask_bytes;
+	int rc;
+
+	rc = digital_in_configure_hw(ddev, NFC_DIGITAL_CONFIG_FRAMING,
+			NFC_DIGITAL_FRAMING_ISO15693_INVENTORY);
+	if (rc)
+		return rc;
+
+	mask_bytes = DIV_ROUND_UP(info->mask_len, sizeof(u8));
+
+	skb = digital_skb_alloc(ddev, sizeof(*req));
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, sizeof(*req));
+	req = (struct digital_iso15693_inv_req *)skb->data;
+
+/* XXX make flag match what's selected by RF_TECH */
+	req->flags = 0x06; /* Inventory flag */
+	req->cmd = DIGITAL_CMD_ISO15693_INVENTORY_REQ;
+	req->mask_len = info->mask_len;
+	req->mask = cpu_to_le64(info->mask);
+
+	/* Don't send mask bytes that aren't required */
+	skb_trim(skb, sizeof(*req) - (sizeof(req->mask) - mask_bytes));
+
+	rc = digital_in_send_cmd(ddev, skb, 1000,
+			digital_in_recv_iso15693_inv_res, info);
+	if (rc)
+		kfree_skb(skb);
+
+	return rc;
+}
+
+static int digital_iso15693_next_slot(struct nfc_digital_dev *ddev,
+		struct digital_iso15693_info *info)
+{
+	struct digital_iso15693_col_entry *col_entry;
+	struct sk_buff *skb;
+	int rc;
+
+	info->slot++;
+
+	if (info->slot < 16) {
+		rc = digital_in_configure_hw(ddev, NFC_DIGITAL_CONFIG_FRAMING,
+				NFC_DIGITAL_FRAMING_ISO15693_EOF);
+		if (!rc) { /* Send the actual EOF to VICC */
+			skb = digital_skb_alloc(ddev, 1); /* alloc dummy skb */
+			if (!skb)
+				return -ENOMEM;
+
+			rc = digital_in_send_cmd(ddev, skb, 1000,
+					digital_in_recv_iso15693_inv_res, info);
+		}
+	} else {
+		mutex_lock(&info->col_list_lock);
+		col_entry = list_first_entry_or_null(&info->col_list,
+				struct digital_iso15693_col_entry, link);
+
+		if (col_entry) {
+			list_del(&col_entry->link);
+			mutex_unlock(&info->col_list_lock);
+
+			info->slot = 0;
+			info->mask_len = col_entry->mask_len;
+			info->mask = col_entry->mask;
+
+			rc = _digital_in_send_iso15693_inv_req(ddev, info);
+
+			kfree(col_entry);
+		} else {
+			mutex_unlock(&info->col_list_lock);
+			rc = -ENODEV;
+		}
+	}
+
+	return rc;
+}
+
+static int digital_iso15693_collision(struct nfc_digital_dev *ddev,
+		struct digital_iso15693_info *info)
+{
+	struct digital_iso15693_col_entry *col_entry;
+
+	col_entry = kzalloc(sizeof(*col_entry), GFP_KERNEL);
+	if (!col_entry)
+		return -ENOMEM;
+
+	col_entry->mask = (info->slot << info->mask_len) | info->mask;
+	col_entry->mask_len = info->mask_len + 4;
+
+	mutex_lock(&info->col_list_lock);
+	list_add_tail(&col_entry->link, &info->col_list);
+	mutex_unlock(&info->col_list_lock);
+
+	return digital_iso15693_next_slot(ddev, info);
+}
+
+static void digital_in_recv_iso15693_inv_res(struct nfc_digital_dev *ddev,
+		void *arg, struct sk_buff *resp)
+{
+	struct digital_iso15693_info *info = arg;
+	struct digital_iso15693_inv_res *res;
+	struct nfc_target *target = NULL;
+	int rc;
+
+	if (IS_ERR(resp)) {
+		rc = PTR_ERR(resp);
+
+		if (rc == -ENODATA) /* Collision */
+			rc = digital_iso15693_collision(ddev, info);
+		else if (rc == -ETIMEDOUT) /* No VICC response */
+			rc = digital_iso15693_next_slot(ddev, info);
+
+		goto exit1;
+	}
+
+	if (resp->len != sizeof(*res)) {
+		rc = -EIO;
+		goto exit2;
+	}
+
+	res = (struct digital_iso15693_inv_res *)resp->data;
+
+	if (!DIGITAL_ISO15693_RES_IS_VALID(res->flags)) {
+		PROTOCOL_ERR("ISO15693 - 10.3.1");
+		rc = -EINVAL;
+		goto exit2;
+	}
+
+	target = kzalloc(sizeof(struct nfc_target), GFP_KERNEL);
+	if (!target) {
+		rc = -ENOMEM;
+		goto exit2;
+	}
+
+	target->is_iso15693 = 1;
+	target->iso15693_dsfid = res->dsfid;
+	memcpy(target->iso15693_uid, &res->uid, sizeof(target->iso15693_uid));
+
+	rc = digital_target_found(ddev, target, NFC_PROTO_ISO15693);
+
+	if (!rc)
+		digital_iso15693_info_destroy(info);
+
+exit2:
+	dev_kfree_skb(resp);
+
+exit1:
+	if (rc) {
+		digital_iso15693_info_destroy(info);
+		kfree(target);
+		digital_poll_next_tech(ddev);
+	}
+}
+
+int digital_in_send_iso15693_inv_req(struct nfc_digital_dev *ddev, u8 rf_tech)
+{
+	struct digital_iso15693_info *info;
+	int rc;
+
+	rc = digital_in_configure_hw(ddev, NFC_DIGITAL_CONFIG_RF_TECH,
+			NFC_DIGITAL_RF_TECH_ISO15693);
+	if (rc)
+		return rc;
+
+	rc = digital_iso15693_info_init(&info);
+	if (rc)
+		return rc;
+
+	rc = _digital_in_send_iso15693_inv_req(ddev, info);
+	if (rc)
+		digital_iso15693_info_destroy(info);
 
 	return rc;
 }

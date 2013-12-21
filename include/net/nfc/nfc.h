@@ -113,6 +113,9 @@ struct nfc_target {
 	u8 sensf_res[NFC_SENSF_RES_MAXSIZE];
 	u8 hci_reader_gate;
 	u8 logical_idx;
+	u8 is_iso15693;
+	u8 iso15693_dsfid;
+	u8 iso15693_uid[NFC_ISO15693_UID_MAXSIZE];
 };
 
 /**
@@ -133,7 +136,7 @@ struct nfc_se {
 };
 
 struct nfc_genl_data {
-	u32 poll_req_pid;
+	u32 poll_req_portid;
 	struct mutex genl_data_mutex;
 };
 
