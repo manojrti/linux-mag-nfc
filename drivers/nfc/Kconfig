@@ -56,6 +56,18 @@ config NFC_PORT100
 
 	  If unsure, say N.
 
+config NFC_TRF7970A
+	tristate "Texas Instruments TRF7970a NFC driver"
+	depends on SPI && NFC_DIGITAL
+	help
+	This option enables the NFC driver for Texas Instruments' TRF7970a
+	  device. Such device supports 5 different protocols: ISO14443A,
+	  ISO14443B, FeLiCa, ISO15693 and ISO18000-3.
+
+	  Say Y here to compile support for TRF7970a into the kernel or
+	  say M  to compile it as a module. The module will be called
+	  trf7970a.ko.
+
 source "drivers/nfc/pn544/Kconfig"
 source "drivers/nfc/microread/Kconfig"
 
