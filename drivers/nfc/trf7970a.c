@@ -262,11 +262,27 @@ static int trf7970a_read(struct trf7970a *trf, u8 reg,
 
 	ret = spi_write_then_read(trf->spi, &addr, 1, val, 1);
 
-#if 0 /* XXX */
+#if 1 /* XXX */
 printk("a_read(0x%02x): 0x%02x\n", addr, *val);
 #endif
 
 	return ret;
+}
+
+static void dump_regs(struct trf7970a *trf)
+{
+	int rc;
+	u8 i, v;
+
+	for (i = 0; i < 0xc; i++) {
+		rc = trf7970a_read(trf, i, &v);
+		if (rc) {
+			printk("XXX read failed: %d\n", rc);
+			break;
+		} else {
+			printk("-- 0x%02x: 0x%02x\n", i, v);
+		}
+	}
 }
 
 static int trf7970a_read_cont(struct trf7970a *trf, u8 reg,
@@ -277,7 +293,7 @@ static int trf7970a_read_cont(struct trf7970a *trf, u8 reg,
 
 	ret = spi_write_then_read(trf->spi, &addr, 1, buf, len);
 
-#if 0 /* XXX */
+#if 1 /* XXX */
 {
 	int i;
 
@@ -296,7 +312,7 @@ static int trf7970a_write(struct trf7970a *trf, u8 reg,
 {
 	u8 buf[2] = { reg, val };
 
-#if 0 /* XXX */
+#if 1 /* XXX */
 printk("a_write(0x%02x, 0x%02x)\n", reg, val);
 #endif
 
@@ -321,10 +337,14 @@ static int trf7970a_read_irqstatus(struct trf7970a *trf, u8 *status)
 		ret = spi_write_then_read(trf->spi, &addr, 1, buf, 1);
 	}
 
-	if (ret)
+	if (ret) {
+printk("irq ERR: 0x%d\n", ret);
 		return ret;
+	}
 
 	*status = buf[0];
+
+printk("irq: 0x%x\n", buf[0]);
 
 	return 0;
 }
@@ -338,7 +358,7 @@ static int trf7970a_cmd(struct trf7970a *trf, u8 opcode)
 	/* lower five bits of the command, contain opcode */
 	cmd |= TRF7970A_CMD_OPCODE(opcode);
 
-#if 0 /* XXX */
+#if 1 /* XXX */
 printk("a_cmd(0x%02x)\n", cmd);
 #endif
 
@@ -460,7 +480,7 @@ len = skb->len + 5;
 
 skip:
 
-#if 0 /* XXX */
+#if 1 /* XXX */
 	{
 	int i;
 
@@ -742,6 +762,9 @@ static int trf7970a_switch_rf(struct nfc_digital_dev *ndev, bool on)
 	else
 		ret = __trf7970a_switch_rf_off(trf);
 
+	if (on)
+		dump_regs(trf);
+
 	return ret;
 }
 
@@ -966,7 +989,7 @@ static int trf7970a_rx_irq(struct trf7970a *trf, u8 status)
 				dp, fifo);
 	}
 
-#if 0 /* XXX */
+#if 1 /* XXX */
 {
 	int i;
 
