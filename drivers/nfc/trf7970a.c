@@ -269,22 +269,6 @@ printk("a_read(0x%02x): 0x%02x\n", addr, *val);
 	return ret;
 }
 
-static void dump_regs(struct trf7970a *trf)
-{
-	int rc;
-	u8 i, v;
-
-	for (i = 0; i < 0xc; i++) {
-		rc = trf7970a_read(trf, i, &v);
-		if (rc) {
-			printk("XXX read failed: %d\n", rc);
-			break;
-		} else {
-			printk("-- 0x%02x: 0x%02x\n", i, v);
-		}
-	}
-}
-
 static int trf7970a_read_cont(struct trf7970a *trf, u8 reg,
 		u8 *buf, size_t len)
 {
@@ -762,9 +746,6 @@ static int trf7970a_switch_rf(struct nfc_digital_dev *ndev, bool on)
 	else
 		ret = __trf7970a_switch_rf_off(trf);
 
-	if (on)
-		dump_regs(trf);
-
 	return ret;
 }
 
@@ -1082,7 +1063,7 @@ static int trf7970a_probe(struct spi_device *spi)
 	struct device_node *np = spi->dev.of_node;
 	const struct spi_device_id *id = spi_get_device_id(spi);
 	struct trf7970a *trf;
-	int gpio;
+	int gpio, gpio_irq;
 	int ret;
 
 	trf = devm_kzalloc(&spi->dev, sizeof(*trf), GFP_KERNEL);
@@ -1105,6 +1086,11 @@ static int trf7970a_probe(struct spi_device *spi)
 	mutex_init(&trf->lock);
 	skb_queue_head_init(&trf->response_queue);
 
+
+
+
+#if 0 /* XXX */
+
 	if (!np) {
 		dev_err(&spi->dev, "Missing OF handle\n");
 		return -EINVAL;
@@ -1114,6 +1100,31 @@ static int trf7970a_probe(struct spi_device *spi)
 	trf->enable_gpio2 = of_get_named_gpio(np, "ti,enable-gpios", 1);
 
 	gpio = of_get_named_gpio(np, "ti,cs0-sel", 0);
+
+#else
+	trf->enable_gpio = 66;
+	trf->enable_gpio2 = 69;
+	gpio = 62;
+
+	/* filled in by board-am335xevm.c
+	spi->irq = 222;
+	*/
+
+	ret = gpio_request(spi->irq, "trf7970a irq");
+	if (ret) {
+		dev_err(&spi->dev, "Failed to request IRQ gpio\n");
+		return ret;
+	}
+	gpio_direction_input(spi->irq);
+
+	gpio_irq = gpio_to_irq(spi->irq);
+
+printk("------------ spi irq: %d, GPIO IRQ: %d\n", spi->irq, gpio_irq);
+#endif
+
+
+
+
 
 	ret = gpio_request(gpio, "cs0 sel");
 	if (ret) {
@@ -1145,9 +1156,15 @@ static int trf7970a_probe(struct spi_device *spi)
 		return ret;
 	}
 
+#if 0
 	ret = devm_request_threaded_irq(&spi->dev, spi->irq, NULL,
 			trf7970a_irq, IRQF_TRIGGER_RISING | IRQF_ONESHOT,
 			"trf7970a", trf);
+#else
+	ret = devm_request_threaded_irq(&spi->dev, gpio_irq, NULL,
+			trf7970a_irq, IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+			"trf7970a", trf);
+#endif
 	if (ret) {
 		dev_err(&spi->dev, "Failed to request IRQ#%d\n", spi->irq);
 		return ret;
