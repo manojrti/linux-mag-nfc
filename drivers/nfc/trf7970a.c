@@ -236,6 +236,7 @@ struct trf7970a {
 	u32 tx_cmd;
 	u32 enable_gpio2;
 	u32 enable_gpio;
+	u32 gpio;
 	u32 alloc_skb;
 	struct sk_buff *skb;
 
@@ -313,6 +314,8 @@ static int trf7970a_read_irqstatus(struct trf7970a *trf, u8 *status)
 	u8 addr;
 
 	addr = TRF7970A_IRQ_STATUS | TRF7970A_CMD_RW;
+
+trf->quirks |= TRF7970A_IRQ_STATUS_READ_ERRATA;
 
 	if (trf->quirks & TRF7970A_IRQ_STATUS_READ_ERRATA) {
 		addr |= TRF7970A_CMD_CONTINUOUS;
@@ -709,7 +712,7 @@ static int __trf7970a_config_framing(struct trf7970a *trf, int framing)
 		}
 	}
 
-#if 0 /* XXX */
+#if 1 /* XXX */
 {
 	static int first_time = 1;
 	int i, rc;
@@ -1044,9 +1047,9 @@ static irqreturn_t trf7970a_irq(int irq, void *_trf)
 	int ret;
 	u8 status;
 
-printk("==============================================================n");
+printk("==============================================================\n");
 dump_regs(trf);
-printk("==============================================================n");
+printk("==============================================================\n");
 
 	ret = trf7970a_read_irqstatus(trf, &status);
 	if (ret) {
@@ -1152,11 +1155,13 @@ static int trf7970a_probe(struct spi_device *spi)
 	trf->enable_gpio2 = of_get_named_gpio(np, "ti,enable-gpios", 1);
 
 	gpio = of_get_named_gpio(np, "ti,cs0-sel", 0);
+	trf->gpio = gpio;
 
 #else
 	trf->enable_gpio = 66;
 	trf->enable_gpio2 = 69;
 	gpio = 62;
+	trf->gpio = gpio;
 
 	/* filled in by board-am335xevm.c
 	spi->irq = 222;
@@ -1265,6 +1270,7 @@ static int trf7970a_remove(struct spi_device *spi)
 
 	gpio_free(trf->enable_gpio);
 	gpio_free(trf->enable_gpio2);
+	gpio_free(trf->gpio);
 	gpio_free(spi->irq);
 
 	nfc_digital_unregister_device(trf->nfc);
