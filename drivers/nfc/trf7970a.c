@@ -790,6 +790,21 @@ static int trf7970a_in_send_cmd(struct nfc_digital_dev *ndev,
 		goto err;
 	}
 
+#if 0 /* XXX */
+{
+int ret;
+u8 v;
+
+ret = trf7970a_read_irqstatus(trf, &v);
+if (ret) {
+	printk("read failes xx - %d\n", ret);
+	return -ENXIO;
+}
+
+printk("IRQ Status: 0x%x\n", v);
+}
+#endif
+
 	trf->cb = cb;
 	trf->arg = arg;
 	trf->ndev = ndev;
@@ -890,8 +905,23 @@ static void trf7970a_res_timer_handler(unsigned long data)
 {
 	struct trf7970a *trf = (struct trf7970a *)data;
 
-#if 0 /* XXX */
+#if 1 /* XXX */
 printk("------------- TIMEOUT ----------------\n"); /* XXX */
+
+#if 0 /* XXX */
+{
+int ret;
+u8 v;
+
+ret = trf7970a_read_irqstatus(trf, &v);
+if (ret) {
+	printk("read failes xx - %d\n", ret);
+	return;
+}
+
+printk("IRQ Status: 0x%x\n", v);
+}
+#endif
 #endif
 
 	trf->cb(trf->ndev, trf->arg, ERR_PTR(-ETIMEDOUT));
@@ -991,12 +1021,32 @@ out:
 	return 1;
 }
 
+static void dump_regs(struct trf7970a *trf)
+{
+	int ret;
+	u8 i, v;
+
+	for (i = 0; i < 0xc; i++) {
+		ret = trf7970a_read(trf, i, &v);
+		if (ret) {
+			printk("XXX read failed: %d\n", ret);
+			break;
+		} else {
+			printk("-- 0x%02x: 0x%02x\n", i, v);
+		}
+	}
+}
+
 static irqreturn_t trf7970a_irq(int irq, void *_trf)
 {
 	struct trf7970a *trf = _trf;
 	unsigned int done = false;
 	int ret;
 	u8 status;
+
+printk("==============================================================n");
+dump_regs(trf);
+printk("==============================================================n");
 
 	ret = trf7970a_read_irqstatus(trf, &status);
 	if (ret) {
@@ -1005,6 +1055,8 @@ static irqreturn_t trf7970a_irq(int irq, void *_trf)
 	}
 
 	usleep_range(1, 5); /* XXX Driver doesn't work without this delay */
+
+printk("a_irq: 0x%x\n", status);
 
 	if (status & TRF7970A_IRQ_STATUS_FIFO)
 		dev_dbg(trf->dev, "FIFO Status\n");
@@ -1161,8 +1213,8 @@ printk("------------ spi irq: %d, GPIO IRQ: %d\n", spi->irq, gpio_irq);
 			trf7970a_irq, IRQF_TRIGGER_RISING | IRQF_ONESHOT,
 			"trf7970a", trf);
 #else
-	ret = devm_request_threaded_irq(&spi->dev, gpio_irq, NULL,
-			trf7970a_irq, IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+	ret = request_threaded_irq(gpio_irq, NULL, trf7970a_irq,
+			IRQF_TRIGGER_RISING | IRQF_ONESHOT,
 			"trf7970a", trf);
 #endif
 	if (ret) {
@@ -1210,6 +1262,11 @@ static int trf7970a_remove(struct spi_device *spi)
 
 	gpio_set_value(trf->enable_gpio, 0);
 	gpio_set_value(trf->enable_gpio2, 0);
+
+	gpio_free(trf->enable_gpio);
+	gpio_free(trf->enable_gpio2);
+	gpio_free(spi->irq);
+
 	nfc_digital_unregister_device(trf->nfc);
 	nfc_digital_free_device(trf->nfc);
 
