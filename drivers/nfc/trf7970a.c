@@ -1258,6 +1258,7 @@ err1:
 	nfc_digital_free_device(trf->nfc);
 
 err0:
+	free_irq(spi->irq, trf);
 	return ret;
 }
 
@@ -1267,6 +1268,8 @@ static int trf7970a_remove(struct spi_device *spi)
 
 	gpio_set_value(trf->enable_gpio, 0);
 	gpio_set_value(trf->enable_gpio2, 0);
+
+	free_irq(spi->irq, trf);
 
 	gpio_free(trf->enable_gpio);
 	gpio_free(trf->enable_gpio2);

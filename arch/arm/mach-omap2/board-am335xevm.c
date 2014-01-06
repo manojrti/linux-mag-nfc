@@ -665,11 +665,16 @@ static struct pinmux_config mmc1_trf7970a_pin_mux[] = {
 	{"gpmc_ben0_cle.gpio2_5", OMAP_MUX_MODE7 | AM33XX_PULL_DISA},
 	{"lcd_data8.gpio2_14", OMAP_MUX_MODE7 | OMAP_INPUT_EN},
 #else
+#if 0
 	{"spi0_cs1.gpio0_6", 0x35},
+#endif
 
 	{"gpmc_csn1.gpio1_30", 0x07},
 	{"gpmc_advn_ale.gpio2_2", 0x07},
+#if 0
 	{"gpmc_oen_ren.gpio2_3", 0x07},
+#endif
+	{"gpmc_ben0_cle.gpio2_5", 0x37},
 	{"gpmc_lcd_data8.gpio2_14", 0x2f},
 #endif
 };
