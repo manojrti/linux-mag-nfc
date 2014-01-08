@@ -63,6 +63,36 @@
 #endif
 #endif
 
+/* ISO 15693 commands codes */
+#define ISO15693_CMD_INVENTORY			0x01
+#define ISO15693_CMD_READ_SINGLE_BLOCK		0x20
+#define ISO15693_CMD_WRITE_SINGLE_BLOCK		0x21
+#define ISO15693_CMD_LOCK_BLOCK			0x22
+#define ISO15693_CMD_READ_MULTIPLE_BLOCK	0x23
+#define ISO15693_CMD_WRITE_MULTIPLE_BLOCK	0x24
+#define ISO15693_CMD_SELECT			0x25
+#define ISO15693_CMD_RESET_TO_READY		0x26
+#define ISO15693_CMD_WRITE_AFI			0x27
+#define ISO15693_CMD_LOCK_AFI			0x28
+#define ISO15693_CMD_WRITE_DSFID		0x29
+#define ISO15693_CMD_LOCK_DSFID			0x2a
+#define ISO15693_CMD_GET_SYSTEM_INFO		0x2b
+#define ISO15693_CMD_GET_MULTIPLE_BLOCK_SECURITY_STATUS	0x2c
+
+/* ISO 15693 request and response flags */
+#define ISO15693_REQ_FLAG_SUB_CARRIER		BIT(0)
+#define ISO15693_REQ_FLAG_DATA_RATE		BIT(1)
+#define ISO15693_REQ_FLAG_INVENTORY		BIT(2)
+#define ISO15693_REQ_FLAG_PROTOCOL_EXT		BIT(3)
+#define ISO15693_REQ_FLAG_SELECT		BIT(4)
+#define ISO15693_REQ_FLAG_AFI			BIT(4)
+#define ISO15693_REQ_FLAG_ADDRESS		BIT(5)
+#define ISO15693_REQ_FLAG_NB_SLOTS		BIT(5)
+#define ISO15693_REQ_FLAG_OPTION		BIT(6)
+
+#define ISO15693_RESP_FLAG_ERROR		BIT(0)
+#define ISO15693_RESP_FLAG_EXT			BIT(3)
+
 /* Direct Commands */
 #define TRF7970A_CMD_IDLE			0x00
 #define TRF7970A_CMD_SOFT_INIT			0x03
@@ -801,6 +831,27 @@ static int trf7970a_in_configure_hw(struct nfc_digital_dev *ndev,
 	return ret;
 }
 
+static int trf7970a_is_iso15693_write_or_lock_cmd(u8 cmd)
+{
+	int ret;
+
+	switch (cmd) {
+	case ISO15693_CMD_WRITE_SINGLE_BLOCK:
+	case ISO15693_CMD_LOCK_BLOCK:
+	case ISO15693_CMD_WRITE_MULTIPLE_BLOCK:
+	case ISO15693_CMD_WRITE_AFI:
+	case ISO15693_CMD_LOCK_AFI:
+	case ISO15693_CMD_WRITE_DSFID:
+	case ISO15693_CMD_LOCK_DSFID:
+		ret = 1;
+		break;
+	default:
+		ret = 0;
+	}
+
+	return ret;
+}
+
 static int trf7970a_in_send_cmd(struct nfc_digital_dev *ndev,
 		struct sk_buff *skb, u16 timeout,
 		nfc_digital_cmd_complete_t cb, void *arg)
@@ -842,16 +893,19 @@ printk("IRQ Status: 0x%x\n", v);
 		return ret;
 	}
 
-#if 1 /* XXX */
 	/*
-	 * TI Tags must have option bit set on writes whch requires an EOF
-	 * to be sent to prompt the tag to send a response.
+	 * According to the Note under Table 1-1 in section 1.6
+	 * of http://www.ti.com/lit/ug/scbu011/scbu011.pdf, TI Tag-it
+	 * HF-I transponders only work correctly when the option bit
+	 * is set on write and lock commands.  It also states that
+	 * the EOF should come no sooner than 10 ms after the EOF of
+	 * the write or lock command.  Emperical evidence suggests
+	 * that delay should be at least 20 ms.
 	 */
 	if ((trf->framing == NFC_DIGITAL_FRAMING_ISO15693_TVT) &&
-			(skb->data[1] == 0x21) &&/* Type V WRITE_SINGLE_BLOCK */
-			(skb->data[0] & 0x40)) { /* Option bit set */
-
-		usleep_range(250000, 250000);
+			trf7970a_is_iso15693_write_or_lock_cmd(skb->data[1]) &&
+			(skb->data[0] & ISO15693_REQ_FLAG_OPTION)) {
+		usleep_range(20000, 20000);
 
 		eof_skb = alloc_skb(1, GFP_KERNEL);
 
@@ -866,7 +920,6 @@ printk("IRQ Status: 0x%x\n", v);
 			return ret;
 		}
 	}
-#endif
 
 err:
 	return ret < 0 ? ret : 0;
