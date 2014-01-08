@@ -55,8 +55,12 @@
 				NFC_PROTO_ISO14443_B_MASK | \
 				NFC_PROTO_ISO15693_MASK)
 #else
+#if 0 /* XXX */
 #define TRF7970A_PROTOCOLS	(NFC_PROTO_MIFARE_MASK | \
 				NFC_PROTO_ISO15693_MASK)
+#else
+#define TRF7970A_PROTOCOLS	NFC_PROTO_ISO15693_MASK
+#endif
 #endif
 
 /* Direct Commands */
@@ -382,6 +386,22 @@ static inline int trf7970a_rf_collision_response(struct trf7970a *trf,
 		return trf7970a_cmd(trf, TRF7970A_CMD_RF_COLLISION_RESPONSE_0);
 	default:
 		return -EINVAL;
+	}
+}
+
+static void dump_regs(struct trf7970a *trf)
+{
+	int ret;
+	u8 i, v;
+
+	for (i = 0; i < 0xc; i++) {
+		ret = trf7970a_read(trf, i, &v);
+		if (ret) {
+			printk("XXX read failed: %d\n", ret);
+			break;
+		} else {
+			printk("-- 0x%02x: 0x%02x\n", i, v);
+		}
 	}
 }
 
@@ -712,7 +732,7 @@ static int __trf7970a_config_framing(struct trf7970a *trf, int framing)
 		}
 	}
 
-#if 1 /* XXX */
+#if 0 /* XXX */
 {
 	static int first_time = 1;
 	int i, rc;
@@ -1024,22 +1044,6 @@ out:
 	return 1;
 }
 
-static void dump_regs(struct trf7970a *trf)
-{
-	int ret;
-	u8 i, v;
-
-	for (i = 0; i < 0xc; i++) {
-		ret = trf7970a_read(trf, i, &v);
-		if (ret) {
-			printk("XXX read failed: %d\n", ret);
-			break;
-		} else {
-			printk("-- 0x%02x: 0x%02x\n", i, v);
-		}
-	}
-}
-
 static irqreturn_t trf7970a_irq(int irq, void *_trf)
 {
 	struct trf7970a *trf = _trf;
@@ -1048,8 +1052,10 @@ static irqreturn_t trf7970a_irq(int irq, void *_trf)
 	u8 status;
 
 printk("==============================================================\n");
+/*
 dump_regs(trf);
 printk("==============================================================\n");
+*/
 
 	ret = trf7970a_read_irqstatus(trf, &status);
 	if (ret) {
