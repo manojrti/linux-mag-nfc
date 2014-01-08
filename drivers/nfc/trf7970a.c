@@ -244,6 +244,7 @@ struct trf7970a {
 	int gpio_irq;
 	u32 alloc_skb;
 	struct sk_buff *skb;
+	u16 timeout;
 
 	u32 baud_rate;
 
@@ -496,6 +497,7 @@ skip:
 	}
 #endif
 
+	trf->timeout = timeout;
 	mod_timer(&trf->res_timer, jiffies + msecs_to_jiffies(timeout));
 
 	return spi_write(trf->spi, buf, len);
@@ -811,6 +813,8 @@ static int trf7970a_in_send_cmd(struct nfc_digital_dev *ndev,
 		goto err;
 	}
 
+	usleep_range(5000, 6000); /* XXX Driver doesn't work without this delay */
+
 #if 0 /* XXX */
 {
 int ret;
@@ -927,22 +931,7 @@ static void trf7970a_res_timer_handler(unsigned long data)
 	struct trf7970a *trf = (struct trf7970a *)data;
 
 #if 1 /* XXX */
-printk("------------- TIMEOUT ----------------\n"); /* XXX */
-
-#if 0 /* XXX */
-{
-int ret;
-u8 v;
-
-ret = trf7970a_read_irqstatus(trf, &v);
-if (ret) {
-	printk("read failes xx - %d\n", ret);
-	return;
-}
-
-printk("IRQ Status: 0x%x\n", v);
-}
-#endif
+printk("------------- TIMEOUT ---------------- (%d)\n", trf->timeout); /* XXX */
 #endif
 
 	trf->cb(trf->ndev, trf->arg, ERR_PTR(-ETIMEDOUT));
@@ -952,7 +941,9 @@ static void trf7970a_rx_timer_handler(unsigned long data)
 {
 	struct trf7970a *trf = (struct trf7970a *)data;
 
+#if 1 /* XXX */
 printk("------------- RX TIMEOUT ----------------\n"); /* XXX */
+#endif
 
 	trf->resp = trf->skb;
 	trf->alloc_skb = 1;
@@ -1034,7 +1025,7 @@ static int trf7970a_rx_irq(struct trf7970a *trf, u8 status)
 				dp, fifo);
 	}
 
-#if 1 /* XXX */
+#if 0 /* XXX */
 {
 	int i;
 
@@ -1077,8 +1068,6 @@ printk("==============================================================\n");
 	}
 
 	usleep_range(1, 5); /* XXX Driver doesn't work without this delay */
-
-printk("a_irq: 0x%x\n", status);
 
 	if (status & TRF7970A_IRQ_STATUS_FIFO)
 		dev_dbg(trf->dev, "FIFO Status\n");
