@@ -676,6 +676,7 @@ static int __trf7970a_config_framing(struct trf7970a *trf, int framing)
 			dev_err(trf->dev, "ISO Control reg write failed\n");
 #endif
 
+#if 0 /* XXX */
 		ret = trf7970a_write(trf, TRF7970A_TX_TIMER_SETTING_H_BYTE,
 				0xc1);
 		if (ret)
@@ -706,6 +707,7 @@ static int __trf7970a_config_framing(struct trf7970a *trf, int framing)
 		ret = trf7970a_write(trf, TRF7970A_RX_SPECIAL_SETTINGS, 0x40);
 		if (ret)
 			dev_err(trf->dev, "RX special write failed\n");
+#endif
 
 		trf->tx_cmd = TRF7970A_CMD_TRANSMIT;
 
