@@ -932,7 +932,7 @@ static void trf7970a_res_timer_handler(unsigned long data)
 {
 	struct trf7970a *trf = (struct trf7970a *)data;
 
-#if 1 /* XXX */
+#if 0 /* XXX */
 printk("------------- TIMEOUT ---------------- (%d)\n", trf->timeout); /* XXX */
 #endif
 
@@ -943,7 +943,7 @@ static void trf7970a_rx_timer_handler(unsigned long data)
 {
 	struct trf7970a *trf = (struct trf7970a *)data;
 
-#if 1 /* XXX */
+#if 0 /* XXX */
 printk("------------- RX TIMEOUT ----------------\n"); /* XXX */
 #endif
 
