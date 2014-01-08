@@ -485,7 +485,7 @@ len = skb->len + 5;
 
 skip:
 
-#if 1 /* XXX */
+#if 0 /* XXX */
 	{
 	int i;
 
