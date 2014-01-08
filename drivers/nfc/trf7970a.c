@@ -1185,8 +1185,6 @@ static int trf7970a_probe(struct spi_device *spi)
 	gpio_direction_input(spi->irq);
 
 	trf->gpio_irq = gpio_to_irq(spi->irq);
-
-printk("------------ spi irq: %d, GPIO IRQ: %d\n", spi->irq, trf->gpio_irq);
 #endif
 
 
