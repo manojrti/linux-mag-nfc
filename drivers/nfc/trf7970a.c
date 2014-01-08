@@ -269,7 +269,7 @@ static int trf7970a_read(struct trf7970a *trf, u8 reg,
 
 	ret = spi_write_then_read(trf->spi, &addr, 1, val, 1);
 
-#if 1 /* XXX */
+#if 0 /* XXX */
 printk("a_read(0x%02x): 0x%02x\n", addr, *val);
 #endif
 
@@ -284,7 +284,7 @@ static int trf7970a_read_cont(struct trf7970a *trf, u8 reg,
 
 	ret = spi_write_then_read(trf->spi, &addr, 1, buf, len);
 
-#if 1 /* XXX */
+#if 0 /* XXX */
 {
 	int i;
 
@@ -303,7 +303,7 @@ static int trf7970a_write(struct trf7970a *trf, u8 reg,
 {
 	u8 buf[2] = { reg, val };
 
-#if 1 /* XXX */
+#if 0 /* XXX */
 printk("a_write(0x%02x, 0x%02x)\n", reg, val);
 #endif
 
@@ -347,7 +347,7 @@ static int trf7970a_cmd(struct trf7970a *trf, u8 opcode)
 	/* lower five bits of the command, contain opcode */
 	cmd |= TRF7970A_CMD_OPCODE(opcode);
 
-#if 1 /* XXX */
+#if 0 /* XXX */
 printk("a_cmd(0x%02x)\n", cmd);
 #endif
 
