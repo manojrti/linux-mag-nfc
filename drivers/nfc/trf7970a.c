@@ -241,12 +241,14 @@ struct trf7970a {
 	u32 enable_gpio2;
 	u32 enable_gpio;
 	u32 gpio;
+	int gpio_irq;
 	u32 alloc_skb;
 	struct sk_buff *skb;
 
 	u32 baud_rate;
 
 	struct timer_list res_timer;
+	struct timer_list rx_timer;
 
 	struct nfc_digital_dev *ndev;
 	nfc_digital_cmd_complete_t cb;
@@ -328,14 +330,10 @@ trf->quirks |= TRF7970A_IRQ_STATUS_READ_ERRATA;
 		ret = spi_write_then_read(trf->spi, &addr, 1, buf, 1);
 	}
 
-	if (ret) {
-printk("irq ERR: 0x%d\n", ret);
+	if (ret)
 		return ret;
-	}
 
 	*status = buf[0];
-
-printk("irq: 0x%x\n", buf[0]);
 
 	return 0;
 }
@@ -950,6 +948,19 @@ printk("IRQ Status: 0x%x\n", v);
 	trf->cb(trf->ndev, trf->arg, ERR_PTR(-ETIMEDOUT));
 }
 
+static void trf7970a_rx_timer_handler(unsigned long data)
+{
+	struct trf7970a *trf = (struct trf7970a *)data;
+
+printk("------------- RX TIMEOUT ----------------\n"); /* XXX */
+
+	trf->resp = trf->skb;
+	trf->alloc_skb = 1;
+
+	trf->cb(trf->ndev, trf->arg, trf->resp);
+
+}
+
 static void trf7970a_handle_collision(struct trf7970a *trf)
 {
 
@@ -1036,11 +1047,13 @@ static int trf7970a_rx_irq(struct trf7970a *trf, u8 status)
 
 out:
 	if (((status & 0xc0) == 0x40) || (status == 0xe0)) {
+		del_timer(&trf->rx_timer);
 		trf->resp = skb;
 		trf->alloc_skb = 1;
 		return 0;
 	}
 
+	mod_timer(&trf->rx_timer, jiffies + msecs_to_jiffies(100));
 	return 1;
 }
 
@@ -1051,8 +1064,8 @@ static irqreturn_t trf7970a_irq(int irq, void *_trf)
 	int ret;
 	u8 status;
 
-printk("==============================================================\n");
 /*
+printk("==============================================================\n");
 dump_regs(trf);
 printk("==============================================================\n");
 */
@@ -1124,7 +1137,7 @@ static int trf7970a_probe(struct spi_device *spi)
 	struct device_node *np = spi->dev.of_node;
 	const struct spi_device_id *id = spi_get_device_id(spi);
 	struct trf7970a *trf;
-	int gpio, gpio_irq;
+	int gpio;
 	int ret;
 
 	trf = devm_kzalloc(&spi->dev, sizeof(*trf), GFP_KERNEL);
@@ -1180,9 +1193,9 @@ static int trf7970a_probe(struct spi_device *spi)
 	}
 	gpio_direction_input(spi->irq);
 
-	gpio_irq = gpio_to_irq(spi->irq);
+	trf->gpio_irq = gpio_to_irq(spi->irq);
 
-printk("------------ spi irq: %d, GPIO IRQ: %d\n", spi->irq, gpio_irq);
+printk("------------ spi irq: %d, GPIO IRQ: %d\n", spi->irq, trf->gpio_irq);
 #endif
 
 
@@ -1224,7 +1237,7 @@ printk("------------ spi irq: %d, GPIO IRQ: %d\n", spi->irq, gpio_irq);
 			trf7970a_irq, IRQF_TRIGGER_RISING | IRQF_ONESHOT,
 			"trf7970a", trf);
 #else
-	ret = request_threaded_irq(gpio_irq, NULL, trf7970a_irq,
+	ret = request_threaded_irq(trf->gpio_irq, NULL, trf7970a_irq,
 			IRQF_TRIGGER_RISING | IRQF_ONESHOT,
 			"trf7970a", trf);
 #endif
@@ -1258,6 +1271,10 @@ printk("------------ spi irq: %d, GPIO IRQ: %d\n", spi->irq, gpio_irq);
 	trf->res_timer.function = trf7970a_res_timer_handler;
 	trf->res_timer.data = (unsigned long)trf;
 
+	init_timer(&trf->rx_timer);
+	trf->rx_timer.function = trf7970a_rx_timer_handler;
+	trf->rx_timer.data = (unsigned long)trf;
+
 	return 0;
 
 err1:
@@ -1275,7 +1292,7 @@ static int trf7970a_remove(struct spi_device *spi)
 	gpio_set_value(trf->enable_gpio, 0);
 	gpio_set_value(trf->enable_gpio2, 0);
 
-	free_irq(spi->irq, trf);
+	free_irq(trf->gpio_irq, trf);
 
 	gpio_free(trf->enable_gpio);
 	gpio_free(trf->enable_gpio2);
