@@ -1290,16 +1290,13 @@ static struct spi_board_info am335x_spi1_slave_info[] = {
 	},
 #else
 	{
-		.modalias      = "trf7970a",
-		.platform_data = NULL,
-#if 0
-		.irq           = 222, /* irq 222 v3.12 */
-#else
-		.irq	       = GPIO_TO_PIN(2, 14), /* 78 */
-#endif
-		.max_speed_hz  = 4000000,
-		.bus_num       = 2,
-		.chip_select   = 0,
+		.modalias	= "trf7970a",
+		.platform_data	= NULL,
+		.irq		= GPIO_TO_PIN(2, 14), /* 78 */
+		.max_speed_hz	= 4000000,
+		.bus_num	= 2,
+		.chip_select	= 0,
+		.mode		= SPI_CPHA,
 	},
 #endif
 };
