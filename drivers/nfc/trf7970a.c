@@ -851,7 +851,7 @@ printk("IRQ Status: 0x%x\n", v);
 			(skb->data[1] == 0x21) &&/* Type V WRITE_SINGLE_BLOCK */
 			(skb->data[0] & 0x40)) { /* Option bit set */
 
-		usleep_range(5000, 250000);
+		usleep_range(250000, 250000);
 
 		eof_skb = alloc_skb(1, GFP_KERNEL);
 
