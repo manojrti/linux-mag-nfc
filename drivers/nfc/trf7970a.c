@@ -357,10 +357,6 @@ static int trf7970a_cmd(struct trf7970a *trf, u8 opcode)
 	/* lower five bits of the command, contain opcode */
 	cmd |= TRF7970A_CMD_OPCODE(opcode);
 
-#if 0 /* XXX */
-printk("a_cmd(0x%02x)\n", cmd);
-#endif
-
 	return spi_write(trf->spi, &cmd, 1);
 }
 
@@ -394,22 +390,6 @@ static inline int trf7970a_rf_collision_response(struct trf7970a *trf,
 		return trf7970a_cmd(trf, TRF7970A_CMD_RF_COLLISION_RESPONSE_0);
 	default:
 		return -EINVAL;
-	}
-}
-
-static void dump_regs(struct trf7970a *trf)
-{
-	int ret;
-	u8 i, v;
-
-	for (i = 0; i < 0xc; i++) {
-		ret = trf7970a_read(trf, i, &v);
-		if (ret) {
-			printk("XXX read failed: %d\n", ret);
-			break;
-		} else {
-			printk("-- 0x%02x: 0x%02x\n", i, v);
-		}
 	}
 }
 
@@ -457,35 +437,6 @@ len = skb->len + 5;
 			if (ret)
 				dev_err(trf->dev,
 					"SPEC FUNC reg can't be written\n");
-#if 0 /* MIFARE WRITE */
-		} else if (skb->data[0] == 0xa2) { /* Type 2 WRITE */
-			/*
-			 * Need to drop into MODE 1 and feed cmd data
-			 * via SPI and not thru FIFO (I think).
-			 */
-			ret = trf7970a_write(trf, TRF7970A_ISO_CTRL, 0x08);
-			if (ret)
-				dev_err(trf->dev,
-					"ISO_CTRL reg write failed\n");
-
-			ret = trf7970a_write(trf, TRF7970A_CHIP_STATUS_CTRL,
-					0x21);
-			if (ret)
-				dev_err(trf->dev,
-					"STAT CTRL reg write failed\n");
-
-			ret = trf7970a_cmd(trf, TRF7970A_CMD_BLOCK_RX);
-			if (ret)
-				dev_err(trf->dev,
-						"CMD_BLOCK_RX cmd failed\n");
-
-			ret = trf7970a_write(trf,
-					TRF7970A_SPECIAL_FUNCTION_REGISTER1,
-					0x08);
-			if (ret)
-				dev_err(trf->dev,
-					"SPEC FUNC reg can't be written\n");
-#endif
 		} else {
 			printk("**************** Don't know what to do here\n");
 		}
@@ -494,17 +445,6 @@ len = skb->len + 5;
 	skb_copy_bits(skb, 0, buf + 5, skb->len);
 
 skip:
-
-#if 0 /* XXX */
-	{
-	int i;
-
-	printk("-->");
-	for (i = 0; i < len; i++)
-		printk(" 0x%02x", buf[i]);
-	printk("\n");
-	}
-#endif
 
 	trf->timeout = timeout;
 	mod_timer(&trf->res_timer, jiffies + msecs_to_jiffies(timeout));
@@ -685,39 +625,6 @@ static int __trf7970a_config_framing(struct trf7970a *trf, int framing)
 			dev_err(trf->dev, "ISO Control reg write failed\n");
 #endif
 
-#if 0 /* XXX */
-		ret = trf7970a_write(trf, TRF7970A_TX_TIMER_SETTING_H_BYTE,
-				0xc1);
-		if (ret)
-			dev_err(trf->dev, "TX Timer high byte write failed\n");
-
-		ret = trf7970a_write(trf, TRF7970A_TX_TIMER_SETTING_L_BYTE,
-				0xbb);
-		if (ret)
-			dev_err(trf->dev, "TX Timer low byte write failed\n");
-
-		ret = trf7970a_write(trf, TRF7970A_TX_PULSE_LENGTH_CTRL, 0x00);
-		if (ret)
-			dev_err(trf->dev, "Pulse length ctrl write failed\n");
-
-		ret = trf7970a_write(trf, TRF7970A_RX_NO_RESPONSE_WAIT, 0x30);
-		if (ret)
-			dev_err(trf->dev, "RX no response wait write failed\n");
-
-		ret = trf7970a_write(trf, TRF7970A_RX_WAIT_TIME, 0x1f);
-		if (ret)
-			dev_err(trf->dev, "RX wait time write failed\n");
-
-		ret = trf7970a_write(trf, TRF7970A_MODULATOR_SYS_CLK_CTRL,
-				0x21);
-		if (ret)
-			dev_err(trf->dev, "Modulator sys clk write failed\n");
-
-		ret = trf7970a_write(trf, TRF7970A_RX_SPECIAL_SETTINGS, 0x40);
-		if (ret)
-			dev_err(trf->dev, "RX special write failed\n");
-#endif
-
 		trf->tx_cmd = TRF7970A_CMD_TRANSMIT;
 
 		break;
@@ -742,26 +649,6 @@ static int __trf7970a_config_framing(struct trf7970a *trf, int framing)
 					"ISO Control reg write failed\n");
 		}
 	}
-
-#if 0 /* XXX */
-{
-	static int first_time = 1;
-	int i, rc;
-	u8 v;
-
-	if (first_time) {
-		for (i = 0; i < 0xc; i++) {
-			rc = trf7970a_read(trf, i, &v);
-			if (rc) {
-				printk("XXX read failed: %d\n", rc);
-				break;
-			} else {
-				printk("-- 0x%02x: 0x%02x\n", i, v);
-			}
-		}
-	}
-}
-#endif
 
 	return ret;
 }
@@ -846,21 +733,6 @@ static int trf7970a_in_send_cmd(struct nfc_digital_dev *ndev,
 	}
 
 	usleep_range(5000, 6000); /* XXX Driver doesn't work without this delay */
-
-#if 0 /* XXX */
-{
-int ret;
-u8 v;
-
-ret = trf7970a_read_irqstatus(trf, &v);
-if (ret) {
-	printk("read failes xx - %d\n", ret);
-	return -ENXIO;
-}
-
-printk("IRQ Status: 0x%x\n", v);
-}
-#endif
 
 	trf->cb = cb;
 	trf->arg = arg;
@@ -1059,17 +931,6 @@ static int trf7970a_rx_irq(struct trf7970a *trf, u8 status)
 				dp, fifo);
 	}
 
-#if 0 /* XXX */
-{
-	int i;
-
-	printk("fifo data:");
-	for (i = 0; i < fifo; i++)
-		printk(" 0x%02x", skb->data[i]);
-	printk("\n");
-}
-#endif
-
 out:
 	if ((status & 0xc0) == 0x40) {
 		del_timer(&trf->rx_timer);
@@ -1088,12 +949,6 @@ static irqreturn_t trf7970a_irq(int irq, void *_trf)
 	unsigned int done = false;
 	int ret;
 	u8 status;
-
-/*
-printk("==============================================================\n");
-dump_regs(trf);
-printk("==============================================================\n");
-*/
 
 	ret = trf7970a_read_irqstatus(trf, &status);
 	if (ret) {
