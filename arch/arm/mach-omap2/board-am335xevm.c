@@ -624,7 +624,7 @@ static struct pinmux_config mmc0_wp_only_pin_mux[] = {
 };
 
 static struct pinmux_config mmc0_cd_only_pin_mux[] = {
-	{"spi0_cs1.gpio0_6",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
+	{"spi0_cs1.gpio0_6",  OMAP_MUX_MODE7 | OMAP_INPUT_EN},
 	{NULL, 0},
 };
 
@@ -647,14 +647,11 @@ static struct pinmux_config mmc1_dat4_7_pin_mux[] = {
 	{NULL, 0},
 };
 
-static struct pinmux_config mmc1_wp_only_pin_mux[] = {
-	{"gpmc_csn0.gpio1_29",	OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
-	{NULL, 0},
-};
-
-static struct pinmux_config mmc1_cd_only_pin_mux[] = {
-	{"gpmc_advn_ale.gpio2_2", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
-	{NULL, 0},
+static struct pinmux_config mmc1_trf7970a_pin_mux[] = {
+	{"gpmc_csn1.gpio1_30", 0x07},
+	{"gpmc_advn_ale.gpio2_2", 0x07},
+	{"gpmc_ben0_cle.gpio2_5", 0x37},
+	{"gpmc_lcd_data8.gpio2_14", 0x2f},
 };
 
 /* Module pin mux for uart3 */
@@ -1257,12 +1254,13 @@ static struct spi_board_info am335x_spi0_slave_info[] = {
 
 static struct spi_board_info am335x_spi1_slave_info[] = {
 	{
-		.modalias      = "m25p80",
-		.platform_data = &am335x_spi_flash,
-		.irq           = -1,
-		.max_speed_hz  = 12000000,
-		.bus_num       = 2,
-		.chip_select   = 0,
+		.modalias	= "trf7970a",
+		.platform_data	= NULL,
+		.irq		= GPIO_TO_PIN(2, 14),
+		.max_speed_hz	= 4000000,
+		.bus_num	= 2,
+		.chip_select	= 0,
+		.mode		= SPI_CPHA,
 	},
 };
 
@@ -1387,6 +1385,9 @@ static struct regulator_consumer_supply tps65217_ldo3_consumers[] = {
 	},
 	{
 		.supply = "vdda_usb0_3p3v",
+	},
+	{
+		.supply = "vin",
 	},
 };
 
@@ -1626,16 +1627,7 @@ static void mcasp1_init(int evm_id, int profile)
 
 static void mmc1_init(int evm_id, int profile)
 {
-	setup_pin_mux(mmc1_common_pin_mux);
-	setup_pin_mux(mmc1_dat4_7_pin_mux);
-	setup_pin_mux(mmc1_wp_only_pin_mux);
-	setup_pin_mux(mmc1_cd_only_pin_mux);
-
-	am335x_mmc[1].mmc = 2;
-	am335x_mmc[1].caps = MMC_CAP_4_BIT_DATA;
-	am335x_mmc[1].gpio_cd = GPIO_TO_PIN(2, 2);
-	am335x_mmc[1].gpio_wp = GPIO_TO_PIN(1, 29);
-	am335x_mmc[1].ocr_mask = MMC_VDD_32_33 | MMC_VDD_33_34; /* 3V3 */
+	setup_pin_mux(mmc1_trf7970a_pin_mux);
 
 	/* mmc will be initialized when mmc0_init is called */
 	return;
@@ -1683,6 +1675,16 @@ static void mmc2_wl12xx_init(int evm_id, int profile)
 
 	/* mmc will be initialized when mmc0_init is called */
 	return;
+}
+
+static void trf7970a_setup(void)
+{
+	int gpio = GPIO_TO_PIN(1, 30);
+	int status = gpio_request(gpio, "ss_gpio");
+	if (status < 0)
+		pr_err("Failed to request ss_gpio");
+
+	gpio_direction_output(gpio, 1);
 }
 
 static void uart1_wl12xx_init(int evm_id, int profile)
@@ -2175,6 +2177,8 @@ static struct evm_dev_cfg beaglebone_old_dev_cfg[] = {
 	{mmc0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{i2c2_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{sgx_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+	{mmc1_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+	{spi1_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{NULL, 0, 0},
 };
 
@@ -2189,6 +2193,8 @@ static struct evm_dev_cfg beaglebone_dev_cfg[] = {
 	{mmc0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{i2c2_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{sgx_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+	{mmc1_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+	{spi1_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{NULL, 0, 0},
 };
 
@@ -2388,6 +2394,8 @@ static void setup_beaglebone_old(void)
 					beaglebone_phy_fixup);
 
 	am33xx_cpsw_init(AM33XX_CPSW_MODE_RMII, NULL, NULL);
+
+	trf7970a_setup();
 }
 
 /* BeagleBone after Rev A3 */
@@ -2404,6 +2412,8 @@ static void setup_beaglebone(void)
 	regulator_has_full_constraints();
 
 	am33xx_cpsw_init(AM33XX_CPSW_MODE_MII, NULL, NULL);
+
+	trf7970a_setup();
 }
 
 /* BeagleBone Black */
@@ -2421,6 +2431,8 @@ static void setup_beagleboneblack(void)
 	regulator_has_full_constraints();
 
 	am33xx_cpsw_init(AM33XX_CPSW_MODE_MII, NULL, NULL);
+
+	trf7970a_setup();
 }
 
 /* EVM - Starter Kit */
