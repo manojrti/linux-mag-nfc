@@ -300,10 +300,6 @@ static int trf7970a_read(struct trf7970a *trf, u8 reg,
 
 	ret = spi_write_then_read(trf->spi, &addr, 1, val, 1);
 
-#if 0 /* XXX */
-printk("a_read(0x%02x): 0x%02x\n", addr, *val);
-#endif
-
 	return ret;
 }
 
@@ -315,17 +311,6 @@ static int trf7970a_read_cont(struct trf7970a *trf, u8 reg,
 
 	ret = spi_write_then_read(trf->spi, &addr, 1, buf, len);
 
-#if 0 /* XXX */
-{
-	int i;
-
-	printk("a_read_cont(0x%02x):", addr);
-	for (i = 0; i< len; i++)
-		printk(" 0x%02x", buf[i]);
-	printk("\n");
-}
-#endif
-
 	return ret; 
 }
 
@@ -333,10 +318,6 @@ static int trf7970a_write(struct trf7970a *trf, u8 reg,
 		u8 val)
 {
 	u8 buf[2] = { reg, val };
-
-#if 0 /* XXX */
-printk("a_write(0x%02x, 0x%02x)\n", reg, val);
-#endif
 
 	return spi_write(trf->spi, buf, 2);
 }
@@ -351,8 +332,6 @@ static int trf7970a_read_irqstatus(struct trf7970a *trf, u8 *status)
 	u8 addr;
 
 	addr = TRF7970A_IRQ_STATUS | TRF7970A_CMD_RW;
-
-trf->quirks |= TRF7970A_IRQ_STATUS_READ_ERRATA;
 
 	if (trf->quirks & TRF7970A_IRQ_STATUS_READ_ERRATA) {
 		addr |= TRF7970A_CMD_CONTINUOUS;
@@ -1092,7 +1071,7 @@ static int trf7970a_rx_irq(struct trf7970a *trf, u8 status)
 #endif
 
 out:
-	if (((status & 0xc0) == 0x40) || (status == 0xe0)) {
+	if ((status & 0xc0) == 0x40) {
 		del_timer(&trf->rx_timer);
 		trf->resp = skb;
 		trf->alloc_skb = 1;
