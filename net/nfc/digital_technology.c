@@ -566,7 +566,7 @@ static int _digital_in_send_iso15693_inv_req(struct nfc_digital_dev *ddev,
 	/* Don't send mask bytes that aren't required */
 	skb_trim(skb, sizeof(*req) - (sizeof(req->mask) - mask_bytes));
 
-	rc = digital_in_send_cmd(ddev, skb, 1000,
+	rc = digital_in_send_cmd(ddev, skb, 30,
 			digital_in_recv_iso15693_inv_res, info);
 	if (rc)
 		kfree_skb(skb);
@@ -591,7 +591,7 @@ static int digital_iso15693_next_slot(struct nfc_digital_dev *ddev,
 			if (!skb)
 				return -ENOMEM;
 
-			rc = digital_in_send_cmd(ddev, skb, 1000,
+			rc = digital_in_send_cmd(ddev, skb, 30,
 					digital_in_recv_iso15693_inv_res, info);
 		}
 	} else {
