@@ -647,38 +647,12 @@ static struct pinmux_config mmc1_dat4_7_pin_mux[] = {
 	{NULL, 0},
 };
 
-#if 0 /* XXX */
-static struct pinmux_config mmc1_wp_only_pin_mux[] = {
-	{"gpmc_csn0.gpio1_29",	OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
-	{NULL, 0},
-};
-
-static struct pinmux_config mmc1_cd_only_pin_mux[] = {
-	{"gpmc_advn_ale.gpio2_2", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
-	{NULL, 0},
-};
-#else
 static struct pinmux_config mmc1_trf7970a_pin_mux[] = {
-#if 0 /* XXX */
-	{"gpmc_csn1.gpio1_30", OMAP_MUX_MODE7 | AM33XX_PULL_DISA},
-	{"gpmc_advn_ale.gpio2_2", OMAP_MUX_MODE7 | AM33XX_PULL_DISA},
-	{"gpmc_ben0_cle.gpio2_5", OMAP_MUX_MODE7 | AM33XX_PULL_DISA},
-	{"lcd_data8.gpio2_14", OMAP_MUX_MODE7 | OMAP_INPUT_EN},
-#else
-#if 0
-	{"spi0_cs1.gpio0_6", 0x35},
-#endif
-
 	{"gpmc_csn1.gpio1_30", 0x07},
 	{"gpmc_advn_ale.gpio2_2", 0x07},
-#if 0
-	{"gpmc_oen_ren.gpio2_3", 0x07},
-#endif
 	{"gpmc_ben0_cle.gpio2_5", 0x37},
 	{"gpmc_lcd_data8.gpio2_14", 0x2f},
-#endif
 };
-#endif
 
 /* Module pin mux for uart3 */
 static struct pinmux_config uart3_pin_mux[] = {
@@ -1279,26 +1253,15 @@ static struct spi_board_info am335x_spi0_slave_info[] = {
 };
 
 static struct spi_board_info am335x_spi1_slave_info[] = {
-#if 0
-	{
-		.modalias      = "m25p80",
-		.platform_data = &am335x_spi_flash,
-		.irq           = -1,
-		.max_speed_hz  = 12000000,
-		.bus_num       = 2,
-		.chip_select   = 0,
-	},
-#else
 	{
 		.modalias	= "trf7970a",
 		.platform_data	= NULL,
-		.irq		= GPIO_TO_PIN(2, 14), /* 78 */
+		.irq		= GPIO_TO_PIN(2, 14),
 		.max_speed_hz	= 4000000,
 		.bus_num	= 2,
 		.chip_select	= 0,
 		.mode		= SPI_CPHA,
 	},
-#endif
 };
 
 static struct gpmc_timings am335x_nand_timings = {
@@ -1661,24 +1624,7 @@ static void mcasp1_init(int evm_id, int profile)
 
 static void mmc1_init(int evm_id, int profile)
 {
-#if 0 /* XXX */
-	setup_pin_mux(mmc1_common_pin_mux);
-	setup_pin_mux(mmc1_dat4_7_pin_mux);
-#endif
-#if 0 /* XXX */
-	setup_pin_mux(mmc1_wp_only_pin_mux);
-	setup_pin_mux(mmc1_cd_only_pin_mux);
-#else
 	setup_pin_mux(mmc1_trf7970a_pin_mux);
-#endif
-
-#if 0 /* XXX */
-	am335x_mmc[1].mmc = 2;
-	am335x_mmc[1].caps = MMC_CAP_4_BIT_DATA;
-	am335x_mmc[1].gpio_cd = GPIO_TO_PIN(2, 2);
-	am335x_mmc[1].gpio_wp = GPIO_TO_PIN(1, 29);
-	am335x_mmc[1].ocr_mask = MMC_VDD_32_33 | MMC_VDD_33_34; /* 3V3 */
-#endif
 
 	/* mmc will be initialized when mmc0_init is called */
 	return;
