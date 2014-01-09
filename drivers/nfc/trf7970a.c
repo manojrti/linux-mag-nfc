@@ -1331,8 +1331,7 @@ static int trf7970a_remove(struct spi_device *spi)
 {
 	struct trf7970a *trf = spi_get_drvdata(spi);
 
-	gpio_set_value(trf->enable_gpio, 0);
-	gpio_set_value(trf->enable_gpio2, 0);
+	__trf7970a_switch_rf_off(trf);
 
 	free_irq(trf->gpio_irq, trf);
 
