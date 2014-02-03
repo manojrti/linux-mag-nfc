@@ -331,6 +331,7 @@ struct trf7970a {
 	int				ss_gpio;
 	int				en2_gpio;
 	int				en_gpio;
+	int				irq_gpio;
 	struct mutex			lock;
 	unsigned int			timeout;
 	bool				ignore_timeout;
@@ -1191,15 +1192,9 @@ static struct nfc_digital_ops trf7970a_nfc_ops = {
 
 static int trf7970a_probe(struct spi_device *spi)
 {
-	struct device_node *np = spi->dev.of_node;
 	const struct spi_device_id *id = spi_get_device_id(spi);
 	struct trf7970a *trf;
 	int ret;
-
-	if (!np) {
-		dev_err(&spi->dev, "No Device Tree entry\n");
-		return -EINVAL;
-	}
 
 	trf = devm_kzalloc(&spi->dev, sizeof(*trf), GFP_KERNEL);
 	if (!trf)
@@ -1214,57 +1209,50 @@ static int trf7970a_probe(struct spi_device *spi)
 	spi->mode = SPI_MODE_1;
 	spi->bits_per_word = 8;
 
-	/* Get the optional Slave Select GPIO used for SPI with SS mode */
-	trf->ss_gpio = of_get_named_gpio(np, "ti,ss-gpio", 0);
-	if (trf->ss_gpio >= 0) {
-		ret = devm_gpio_request_one(trf->dev, trf->ss_gpio,
-				GPIOF_DIR_OUT | GPIOF_INIT_LOW, "SS");
-		if (ret) {
-			dev_err(trf->dev, "Can't request SS GPIO: %d\n", ret);
-			return ret;
-		}
-	} else {
-		dev_info(trf->dev, "Using SPI without SS mode\n");
-	}
+	trf->ss_gpio = 62;
+	trf->en_gpio = 66;
+	trf->en2_gpio = 69;
 
-	/* There are two enable pins - both must be present */
-	trf->en_gpio = of_get_named_gpio(np, "ti,enable-gpios", 0);
-	if (trf->en_gpio < 0) {
-		dev_err(trf->dev, "No EN GPIO property\n");
+	/* Get the optional Slave Select GPIO used for SPI with SS mode */
+	ret = gpio_request(trf->ss_gpio, "SS");
+	if (ret) {
+		dev_err(trf->dev, "Can't request SS GPIO: %d\n", ret);
 		return ret;
 	}
+	gpio_direction_output(trf->ss_gpio, 0);
 
-	ret = devm_gpio_request_one(trf->dev, trf->en_gpio,
-			GPIOF_DIR_OUT | GPIOF_INIT_LOW, "EN");
+	ret = gpio_request(trf->en_gpio, "EN");
 	if (ret) {
 		dev_err(trf->dev, "Can't request EN GPIO: %d\n", ret);
-		return ret;
+		goto err_free_ss_gpio;
 	}
+	gpio_direction_output(trf->en_gpio, 0);
 
-	trf->en2_gpio = of_get_named_gpio(np, "ti,enable-gpios", 1);
-	if (trf->en2_gpio < 0) {
-		dev_err(trf->dev, "No EN2 GPIO property\n");
-		return ret;
-	}
-
-	ret = devm_gpio_request_one(trf->dev, trf->en2_gpio,
-			GPIOF_DIR_OUT | GPIOF_INIT_LOW, "EN2");
+	ret = gpio_request(trf->en2_gpio, "EN2");
 	if (ret) {
 		dev_err(trf->dev, "Can't request EN2 GPIO: %d\n", ret);
-		return ret;
+		goto err_free_en_gpio;
 	}
+	gpio_direction_output(trf->en2_gpio, 0);
+
+	ret = gpio_request(spi->irq, "trf7970a irq");
+	if (ret) {
+		dev_err(&spi->dev, "Failed to request IRQ gpio\n");
+		goto err_free_en2_gpio;
+	}
+	gpio_direction_input(spi->irq);
+
+	trf->irq_gpio = gpio_to_irq(spi->irq);
 
 	usleep_range(2000, 3000);
-	if (trf->ss_gpio >= 0)
-		gpio_set_value(trf->ss_gpio, 1);
+	gpio_set_value(trf->ss_gpio, 1);
 	usleep_range(3000, 4000);
 
-	ret = devm_request_threaded_irq(trf->dev, spi->irq, NULL,
-			trf7970a_irq, IRQF_TRIGGER_RISING | IRQF_ONESHOT,
-			"trf7970a", trf);
+	ret = request_threaded_irq(trf->irq_gpio, NULL, trf7970a_irq,
+			IRQF_TRIGGER_RISING | IRQF_ONESHOT, "trf7970a", trf);
 	if (ret) {
 		dev_err(trf->dev, "Can't request IRQ#%d: %d\n", spi->irq, ret);
-		return ret;
+		goto err_free_spi_irq;
 	}
 
 	trf->ddev = nfc_digital_allocate_device(&trf7970a_nfc_ops,
@@ -1273,7 +1261,8 @@ static int trf7970a_probe(struct spi_device *spi)
 			0);
 	if (!trf->ddev) {
 		dev_err(trf->dev, "Can't allocate NFC digital device\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto err_free_irq;
 	}
 
 	nfc_digital_set_parent_dev(trf->ddev, trf->dev);
@@ -1294,6 +1283,17 @@ static int trf7970a_probe(struct spi_device *spi)
 
 err_free_ddev:
 	nfc_digital_free_device(trf->ddev);
+err_free_irq:
+	free_irq(trf->irq_gpio, trf);
+err_free_spi_irq:
+	gpio_free(spi->irq);
+err_free_en2_gpio:
+	gpio_free(trf->en2_gpio);
+err_free_en_gpio:
+	gpio_free(trf->en_gpio);
+err_free_ss_gpio:
+	gpio_free(trf->ss_gpio);
+
 	return ret;
 }
 
@@ -1304,13 +1304,19 @@ static int trf7970a_remove(struct spi_device *spi)
 	_trf7970a_abort_cmd(trf);
 	trf7970a_switch_rf_off(trf);
 
-	if (trf->ss_gpio >= 0)
-		gpio_set_value(trf->ss_gpio, 0);
-
-	mutex_destroy(&trf->lock);
+	gpio_set_value(trf->ss_gpio, 0);
 
 	nfc_digital_unregister_device(trf->ddev);
 	nfc_digital_free_device(trf->ddev);
+
+	free_irq(trf->irq_gpio, trf);
+
+	gpio_free(spi->irq);
+	gpio_free(trf->en2_gpio);
+	gpio_free(trf->en_gpio);
+	gpio_free(trf->ss_gpio);
+
+	mutex_destroy(&trf->lock);
 
 	return 0;
 }
@@ -1331,7 +1337,18 @@ static struct spi_driver trf7970a_spi_driver = {
 	},
 };
 
-module_spi_driver(trf7970a_spi_driver);
+static int __init trf7970a_spi_init(void)
+{
+	return spi_register_driver(&trf7970a_spi_driver);
+}
+
+static void __exit trf7970a_spi_exit(void)
+{
+	spi_unregister_driver(&trf7970a_spi_driver);
+}
+
+module_init(trf7970a_spi_init);
+module_exit(trf7970a_spi_exit);
 
 MODULE_AUTHOR("Mark A. Greer <mgreer@animalcreek.com>");
 MODULE_LICENSE("GPL v2");
