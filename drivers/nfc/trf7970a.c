@@ -132,7 +132,7 @@
 
 #define TRF7970A_WAIT_FOR_RX_DATA_TIMEOUT	20
 #define TRF7970A_WAIT_FOR_FIFO_DRAIN_TIMEOUT	3
-#define TRF7970A_WAIT_TO_ISSUE_ISO15693_EOF	20
+#define TRF7970A_WAIT_TO_ISSUE_ISO15693_EOF	30
 
 /* Quirks */
 /* Erratum: When reading IRQ Status register on trf7970a, we must issue a
