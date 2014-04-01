@@ -411,6 +411,7 @@ struct trf7970a {
 	bool				issue_eof;
 	int				en2_gpio;
 	int				en_gpio;
+	int				irq_gpio;
 	struct mutex			lock;
 	unsigned int			timeout;
 	bool				ignore_timeout;
@@ -1618,33 +1619,22 @@ static struct nfc_digital_ops trf7970a_nfc_ops = {
 	.abort_cmd		= trf7970a_abort_cmd,
 };
 
-static int trf7970a_get_autosuspend_delay(struct device_node *np)
+static int trf7970a_get_autosuspend_delay(void)
 {
-	int autosuspend_delay, ret;
-
-	ret = of_property_read_u32(np, "autosuspend-delay", &autosuspend_delay);
-	if (ret)
-		autosuspend_delay = TRF7970A_AUTOSUSPEND_DELAY;
-
-	return autosuspend_delay;
+	return 30000;
 }
 
-static int trf7970a_get_vin_voltage_override(struct device_node *np,
-		u32 *vin_uvolts)
+static int trf7970a_get_vin_voltage_override(u32 *vin_uvolts)
 {
-	return of_property_read_u32(np, "vin-voltage-override", vin_uvolts);
+	*vin_uvolts = 5000000;
+
+	return 0;
 }
 
 static int trf7970a_probe(struct spi_device *spi)
 {
-	struct device_node *np = spi->dev.of_node;
 	struct trf7970a *trf;
 	int uvolts, autosuspend_delay, ret;
-
-	if (!np) {
-		dev_err(&spi->dev, "No Device Tree entry\n");
-		return -EINVAL;
-	}
 
 	trf = devm_kzalloc(&spi->dev, sizeof(*trf), GFP_KERNEL);
 	if (!trf)
@@ -1654,54 +1644,50 @@ static int trf7970a_probe(struct spi_device *spi)
 	trf->dev = &spi->dev;
 	trf->spi = spi;
 
+	trf->en_gpio = 66;
+	trf->en2_gpio = 69;
+
 	spi->mode = SPI_MODE_1;
 	spi->bits_per_word = 8;
 
-	if (of_property_read_bool(np, "irq-status-read-quirk"))
-		trf->quirks |= TRF7970A_QUIRK_IRQ_STATUS_READ;
+	trf->quirks |= TRF7970A_QUIRK_IRQ_STATUS_READ;
 
-	/* There are two enable pins - both must be present */
-	trf->en_gpio = of_get_named_gpio(np, "ti,enable-gpios", 0);
-	if (!gpio_is_valid(trf->en_gpio)) {
-		dev_err(trf->dev, "No EN GPIO property\n");
-		return trf->en_gpio;
-	}
-
-	ret = devm_gpio_request_one(trf->dev, trf->en_gpio,
-			GPIOF_DIR_OUT | GPIOF_INIT_LOW, "EN");
+	ret = gpio_request(trf->en_gpio, "EN");
 	if (ret) {
 		dev_err(trf->dev, "Can't request EN GPIO: %d\n", ret);
 		return ret;
 	}
+	gpio_direction_output(trf->en_gpio, 0);
 
-	trf->en2_gpio = of_get_named_gpio(np, "ti,enable-gpios", 1);
-	if (!gpio_is_valid(trf->en2_gpio)) {
-		dev_err(trf->dev, "No EN2 GPIO property\n");
-		return trf->en2_gpio;
-	}
-
-	ret = devm_gpio_request_one(trf->dev, trf->en2_gpio,
-			GPIOF_DIR_OUT | GPIOF_INIT_LOW, "EN2");
+	ret = gpio_request(trf->en2_gpio, "EN2");
 	if (ret) {
 		dev_err(trf->dev, "Can't request EN2 GPIO: %d\n", ret);
-		return ret;
+		goto err_free_en_gpio;
 	}
+	gpio_direction_output(trf->en2_gpio, 0);
 
-	if (of_property_read_bool(np, "en2-rf-quirk"))
-		trf->quirks |= TRF7970A_QUIRK_EN2_MUST_STAY_LOW;
+	ret = gpio_request(spi->irq, "trf7970a irq");
+	if (ret) {
+		dev_err(trf->dev, "Can't request IRQ GPIO: %d\n", ret);
+		goto err_free_en2_gpio;
+	}
+	gpio_direction_input(spi->irq);
 
-	ret = devm_request_threaded_irq(trf->dev, spi->irq, NULL,
-			trf7970a_irq, IRQF_TRIGGER_RISING | IRQF_ONESHOT,
-			"trf7970a", trf);
+	trf->irq_gpio = gpio_to_irq(spi->irq);
+
+	trf->quirks |= TRF7970A_QUIRK_EN2_MUST_STAY_LOW;
+
+	ret = request_threaded_irq(trf->irq_gpio, NULL, trf7970a_irq,
+			IRQF_TRIGGER_RISING | IRQF_ONESHOT, "trf7970a", trf);
 	if (ret) {
 		dev_err(trf->dev, "Can't request IRQ#%d: %d\n", spi->irq, ret);
-		return ret;
+		goto err_free_spi_irq;
 	}
 
 	mutex_init(&trf->lock);
 	INIT_DELAYED_WORK(&trf->timeout_work, trf7970a_timeout_work_handler);
 
-	trf->regulator = devm_regulator_get(&spi->dev, "vin");
+	trf->regulator = regulator_get(&spi->dev, "vin");
 	if (IS_ERR(trf->regulator)) {
 		ret = PTR_ERR(trf->regulator);
 		dev_err(trf->dev, "Can't get VIN regulator: %d\n", ret);
@@ -1711,10 +1697,10 @@ static int trf7970a_probe(struct spi_device *spi)
 	ret = regulator_enable(trf->regulator);
 	if (ret) {
 		dev_err(trf->dev, "Can't enable VIN: %d\n", ret);
-		goto err_destroy_lock;
+		goto err_put_regulator;
 	}
 
-	ret = trf7970a_get_vin_voltage_override(np, &uvolts);
+	ret = trf7970a_get_vin_voltage_override(&uvolts);
 	if (ret)
 		uvolts = regulator_get_voltage(trf->regulator);
 
@@ -1736,7 +1722,7 @@ static int trf7970a_probe(struct spi_device *spi)
 	nfc_digital_set_drvdata(trf->ddev, trf);
 	spi_set_drvdata(spi, trf);
 
-	autosuspend_delay = trf7970a_get_autosuspend_delay(np);
+	autosuspend_delay = trf7970a_get_autosuspend_delay();
 
 	pm_runtime_set_autosuspend_delay(trf->dev, autosuspend_delay);
 	pm_runtime_use_autosuspend(trf->dev);
@@ -1757,9 +1743,17 @@ err_free_ddev:
 	nfc_digital_free_device(trf->ddev);
 err_disable_regulator:
 	regulator_disable(trf->regulator);
+err_put_regulator:
+	regulator_put(trf->regulator);
 err_destroy_lock:
 	mutex_destroy(&trf->lock);
-	devm_free_irq(trf->dev, spi->irq, trf);
+	free_irq(trf->irq_gpio, trf);
+err_free_spi_irq:
+	gpio_free(spi->irq);
+err_free_en2_gpio:
+	gpio_free(trf->en2_gpio);
+err_free_en_gpio:
+	gpio_free(trf->en_gpio);
 	return ret;
 }
 
@@ -1796,8 +1790,15 @@ static int trf7970a_remove(struct spi_device *spi)
 	nfc_digital_free_device(trf->ddev);
 
 	regulator_disable(trf->regulator);
+	regulator_put(trf->regulator);
 
 	mutex_destroy(&trf->lock);
+
+	free_irq(trf->irq_gpio, trf);
+
+	gpio_free(spi->irq);
+	gpio_free(trf->en2_gpio);
+	gpio_free(trf->en_gpio);
 
 	return 0;
 }
@@ -1880,7 +1881,18 @@ static struct spi_driver trf7970a_spi_driver = {
 	},
 };
 
-module_spi_driver(trf7970a_spi_driver);
+static int __init trf7970a_spi_init(void)
+{
+	return spi_register_driver(&trf7970a_spi_driver);
+}
+
+static void __exit trf7970a_spi_exit(void)
+{
+	spi_unregister_driver(&trf7970a_spi_driver);
+}
+
+module_init(trf7970a_spi_init);
+module_exit(trf7970a_spi_exit);
 
 MODULE_AUTHOR("Mark A. Greer <mgreer@animalcreek.com>");
 MODULE_LICENSE("GPL v2");
