@@ -641,7 +641,7 @@ static irqreturn_t trf7970a_irq(int irq, void *dev_id)
 {
 	struct trf7970a *trf = dev_id;
 	int ret;
-	u8 status;
+	u8 status, fifo_bytes;
 
 	mutex_lock(&trf->lock);
 
@@ -694,6 +694,18 @@ static irqreturn_t trf7970a_irq(int irq, void *dev_id)
 			trf->ignore_timeout =
 				!cancel_delayed_work(&trf->timeout_work);
 			trf7970a_drain_fifo(trf, status);
+		} else if (status & TRF7970A_IRQ_STATUS_FIFO) {
+			ret = trf7970a_read(trf, TRF7970A_FIFO_STATUS,
+					&fifo_bytes);
+			if (ret) {
+				trf7970a_send_err_upstream(trf, ret);
+			} else if (fifo_bytes & TRF7970A_FIFO_STATUS_OVERFLOW) {
+				dev_err(trf->dev, "%s - fifo overflow: 0x%x\n",
+						__func__, fifo_bytes);
+				trf7970a_send_err_upstream(trf, -EIO);
+			} else if (!fifo_bytes) {
+				trf7970a_cmd(trf, TRF7970A_CMD_FIFO_RESET);
+			}
 		} else if (status == TRF7970A_IRQ_STATUS_TX) {
 			trf7970a_cmd(trf, TRF7970A_CMD_FIFO_RESET);
 		} else {
