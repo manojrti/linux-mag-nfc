@@ -874,8 +874,6 @@ static int trf7970a_switch_rf(struct nfc_digital_dev *ddev, bool on)
 
 static int trf7970a_config_rf_tech(struct trf7970a *trf, int tech)
 {
-	int ret = 0;
-
 	dev_dbg(trf->dev, "rf technology: %d\n", tech);
 
 	switch (tech) {
@@ -906,7 +904,7 @@ static int trf7970a_config_rf_tech(struct trf7970a *trf, int tech)
 
 	trf->technology = tech;
 
-	return ret;
+	return trf7970a_init(trf);
 }
 
 static int trf7970a_config_framing(struct trf7970a *trf, int framing)
@@ -1483,12 +1481,6 @@ static int trf7970a_pm_runtime_resume(struct device *dev)
 	gpio_set_value(trf->en_gpio, 1);
 
 	usleep_range(20000, 21000);
-
-	ret = trf7970a_init(trf);
-	if (ret) {
-		dev_err(dev, "%s - Can't initialize: %d\n", __func__, ret);
-		return ret;
-	}
 
 	pm_runtime_mark_last_busy(dev);
 
