@@ -784,6 +784,11 @@ static int trf7970a_init(struct trf7970a *trf)
 	if (ret)
 		goto err_out;
 
+	ret = trf7970a_write(trf, TRF7970A_MODULATOR_SYS_CLK_CTRL,
+			trf->modulator_sys_clk_ctrl);
+	if (ret)
+		goto err_out;
+
 	/* Must clear NFC Target Detection Level reg due to erratum */
 	ret = trf7970a_write(trf, TRF7970A_NFC_TARGET_LEVEL, 0);
 	if (ret)
@@ -948,11 +953,6 @@ static int trf7970a_config_framing(struct trf7970a *trf, int framing)
 			return ret;
 
 		trf->iso_ctrl = iso_ctrl;
-
-		ret = trf7970a_write(trf, TRF7970A_MODULATOR_SYS_CLK_CTRL,
-				trf->modulator_sys_clk_ctrl);
-		if (ret)
-			return ret;
 	}
 
 	if (!(trf->chip_status_ctrl & TRF7970A_CHIP_STATUS_RF_ON)) {
