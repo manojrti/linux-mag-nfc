@@ -1391,7 +1391,6 @@ static int trf7970a_tg_config_rf_tech(struct trf7970a *trf, int tech)
 			TRF7970A_ISO_CTRL_NFC_NFCF_424;
 		trf->modulator_sys_clk_ctrl = TRF7970A_MODULATOR_DEPTH_ASK10;
 		break;
-		break;
 	default:
 		dev_dbg(trf->dev, "Unsupported rf technology: %d\n", tech);
 		return -EINVAL;
