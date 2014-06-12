@@ -1031,6 +1031,7 @@ static int trf7970a_in_config_rf_tech(struct trf7970a *trf, int tech)
 		trf->guard_time = TRF7970A_GUARD_TIME_NFCF;
 		break;
 	case NFC_DIGITAL_RF_TECH_424F:
+	case NFC_DIGITAL_RF_TECH_424F_STEPUP:
 		trf->iso_ctrl_tech = TRF7970A_ISO_CTRL_FELICA_424;
 		trf->modulator_sys_clk_ctrl = TRF7970A_MODULATOR_DEPTH_ASK10;
 		trf->guard_time = TRF7970A_GUARD_TIME_NFCF;
@@ -1047,7 +1048,10 @@ static int trf7970a_in_config_rf_tech(struct trf7970a *trf, int tech)
 
 	trf->technology = tech;
 
-	return trf7970a_init(trf);
+	if (tech != NFC_DIGITAL_RF_TECH_424F_STEPUP)
+		return trf7970a_init(trf);
+	else
+		return 0;
 }
 
 static int trf7970a_is_rf_field(struct trf7970a *trf, bool *is_rf_field)
