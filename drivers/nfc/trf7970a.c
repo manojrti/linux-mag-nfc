@@ -699,6 +699,16 @@ static void trf7970a_drain_fifo(struct trf7970a *trf, u8 status)
 		status = TRF7970A_IRQ_STATUS_SRX;
 	} else {
 		trf->state = TRF7970A_ST_WAIT_FOR_RX_DATA_CONT;
+
+		ret = trf7970a_read(trf, TRF7970A_FIFO_STATUS, &fifo_bytes);
+		if (ret) {
+			trf7970a_send_err_upstream(trf, ret);
+			return;
+		}
+
+		if (fifo_bytes & ~TRF7970A_FIFO_STATUS_OVERFLOW)
+			status = TRF7970A_IRQ_STATUS_SRX |
+				TRF7970A_IRQ_STATUS_FIFO;
 	}
 
 no_rx_data:
