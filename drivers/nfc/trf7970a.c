@@ -456,10 +456,22 @@ static int trf7970a_read_cont(struct trf7970a *trf, u8 reg,
 
 	dev_dbg(trf->dev, "read_cont(0x%x, %zd)\n", addr, len);
 
-	ret = spi_write_then_read(trf->spi, &addr, 1, buf, len);
-	if (ret)
-		dev_err(trf->dev, "%s - addr: 0x%x, ret: %d\n", __func__, addr,
-				ret);
+	do {
+		ret = spi_write_then_read(trf->spi, &addr, 1, buf, min(len, (size_t)32));
+		if (ret)
+			dev_err(trf->dev, "%s - addr: 0x%x, ret: %d\n", __func__, addr,
+					ret);
+
+		tl_log(trf, TL_TYPE_REG_READ_CONT, addr, buf, len);
+
+		if (len > 32) {
+			len -= 32; /* XXX */
+			buf += 32;
+		} else {
+			len = 0;
+		}
+	} while (len > 0);
+
 	return ret;
 }
 
@@ -647,12 +659,16 @@ static void trf7970a_drain_fifo(struct trf7970a *trf, u8 status)
 	if (!fifo_bytes)
 		goto no_rx_data;
 
+#if 0 /* XXX */
 	if (fifo_bytes & TRF7970A_FIFO_STATUS_OVERFLOW) {
 		dev_err(trf->dev, "%s - fifo overflow: 0x%x\n", __func__,
 				fifo_bytes);
 		trf7970a_send_err_upstream(trf, -EIO);
 		return;
 	}
+#else
+	fifo_bytes &= ~TRF7970A_FIFO_STATUS_OVERFLOW;
+#endif
 
 	if (fifo_bytes > skb_tailroom(skb)) {
 		skb = skb_copy_expand(skb, skb_headroom(skb),
