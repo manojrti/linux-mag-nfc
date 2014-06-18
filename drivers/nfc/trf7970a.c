@@ -764,7 +764,7 @@ static irqreturn_t trf7970a_irq(int irq, void *dev_id)
 				dev_err(trf->dev, "%s - fifo overflow: 0x%x\n",
 						__func__, fifo_bytes);
 				trf7970a_send_err_upstream(trf, -EIO);
-			} else if (fifo_bytes) {
+			} else if (!fifo_bytes) {
 				trf7970a_cmd(trf, TRF7970A_CMD_FIFO_RESET);
 			}
 		} else if ((status == TRF7970A_IRQ_STATUS_TX) ||
