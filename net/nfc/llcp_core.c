@@ -574,14 +574,14 @@ static int nfc_llcp_build_gb(struct nfc_llcp_local *local)
 	memcpy(gb_cur, version_tlv, version_length);
 	gb_cur += version_length;
 
-	memcpy(gb_cur, lto_tlv, lto_length);
-	gb_cur += lto_length;
+	memcpy(gb_cur, miux_tlv, miux_length);
+	gb_cur += miux_length;
 
 	memcpy(gb_cur, wks_tlv, wks_length);
 	gb_cur += wks_length;
 
-	memcpy(gb_cur, miux_tlv, miux_length);
-	gb_cur += miux_length;
+	memcpy(gb_cur, lto_tlv, lto_length);
+	gb_cur += lto_length;
 
 	local->gb_len = gb_len;
 
