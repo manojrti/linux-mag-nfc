@@ -131,8 +131,8 @@
 #define TRF7970A_TX_MAX				(4096 - 1)
 
 #define TRF7970A_WAIT_FOR_RX_DATA_TIMEOUT	20
-#define TRF7970A_WAIT_FOR_FIFO_DRAIN_TIMEOUT	3
-#define TRF7970A_WAIT_FOR_TX_IRQ		5
+#define TRF7970A_WAIT_FOR_FIFO_DRAIN_TIMEOUT	20
+#define TRF7970A_WAIT_FOR_TX_IRQ		20
 #define TRF7970A_WAIT_TO_ISSUE_ISO15693_EOF	30
 
 /* Guard times for various RF technologies (in us) */
@@ -610,6 +610,9 @@ static void trf7970a_fill_fifo(struct trf7970a *trf)
 {
 	struct sk_buff *skb = trf->tx_skb;
 	unsigned int len;
+#if 0 /* XXX */
+	char *prefix;
+#endif
 	int ret;
 	u8 fifo_bytes;
 
@@ -631,6 +634,12 @@ static void trf7970a_fill_fifo(struct trf7970a *trf)
 	/* Calculate how much more data can be written to the fifo */
 	len = TRF7970A_FIFO_SIZE - fifo_bytes;
 	len = min(skb->len, len);
+
+#if 0 /* XXX */
+	prefix = skb_push(skb, 1);
+	prefix[0] = TRF7970A_CMD_BIT_CONTINUOUS | TRF7970A_FIFO_IO_REGISTER;
+	len++;
+#endif
 
 	ret = trf7970a_transmit(trf, skb, len);
 	if (ret)
@@ -656,9 +665,6 @@ static void trf7970a_drain_fifo(struct trf7970a *trf, u8 status)
 
 	dev_dbg(trf->dev, "Draining FIFO - fifo_bytes: 0x%x\n", fifo_bytes);
 
-	if (!fifo_bytes)
-		goto no_rx_data;
-
 #if 0 /* XXX */
 	if (fifo_bytes & TRF7970A_FIFO_STATUS_OVERFLOW) {
 		dev_err(trf->dev, "%s - fifo overflow: 0x%x\n", __func__,
@@ -669,6 +675,9 @@ static void trf7970a_drain_fifo(struct trf7970a *trf, u8 status)
 #else
 	fifo_bytes &= ~TRF7970A_FIFO_STATUS_OVERFLOW;
 #endif
+
+	if (!fifo_bytes)
+		goto no_rx_data;
 
 	if (fifo_bytes > skb_tailroom(skb)) {
 		skb = skb_copy_expand(skb, skb_headroom(skb),
@@ -898,6 +907,8 @@ static void trf7970a_timeout_work_handler(struct work_struct *work)
 {
 	struct trf7970a *trf = container_of(work, struct trf7970a,
 			timeout_work.work);
+	int ret;
+	u8 fifo_bytes;
 
 	dev_dbg(trf->dev, "Timeout - state: %d, ignore_timeout: %d\n",
 			trf->state, trf->ignore_timeout);
@@ -913,8 +924,33 @@ static void trf7970a_timeout_work_handler(struct work_struct *work)
 	case TRF7970A_ST_IDLE:
 	case TRF7970A_ST_IDLE_RX_BLOCKED:
 		break;
+	case TRF7970A_ST_WAIT_FOR_TX_FIFO:
+		ret = trf7970a_read(trf, TRF7970A_FIFO_STATUS, &fifo_bytes);
+		if (ret) {
+			trf7970a_send_err_upstream(trf, ret);
+		} else {
+			if (fifo_bytes)
+				schedule_delayed_work(&trf->timeout_work,
+					msecs_to_jiffies(
+						TRF7970A_WAIT_FOR_TX_IRQ));
+			else
+				trf7970a_send_err_upstream(trf, -ETIMEDOUT);
+		}
+		break;
 	case TRF7970A_ST_WAIT_FOR_RX_DATA_CONT:
-		trf7970a_send_upstream(trf); /* No more rx data so send up */
+		ret = trf7970a_read(trf, TRF7970A_FIFO_STATUS, &fifo_bytes);
+		if (ret) {
+			trf7970a_send_err_upstream(trf, ret);
+		} else {
+			fifo_bytes &= ~TRF7970A_FIFO_STATUS_OVERFLOW;
+
+			if (!fifo_bytes)
+				schedule_delayed_work(&trf->timeout_work,
+					msecs_to_jiffies(
+					  TRF7970A_WAIT_FOR_RX_DATA_TIMEOUT));
+			else /* No more rx data so send up */
+				trf7970a_send_upstream(trf);
+		}
 		break;
 	case TRF7970A_ST_WAIT_TO_ISSUE_EOF:
 		trf7970a_issue_eof(trf);
