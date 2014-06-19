@@ -950,10 +950,8 @@ static void trf7970a_timeout_work_handler(struct work_struct *work)
 		} else {
 			fifo_bytes &= ~TRF7970A_FIFO_STATUS_OVERFLOW;
 
-			if (!fifo_bytes)
-				schedule_delayed_work(&trf->timeout_work,
-					msecs_to_jiffies(
-					  TRF7970A_WAIT_FOR_RX_DATA_TIMEOUT));
+			if (fifo_bytes)
+				trf7970a_drain_fifo(trf, 0);
 			else /* No more rx data so send up */
 				trf7970a_send_upstream(trf);
 		}
