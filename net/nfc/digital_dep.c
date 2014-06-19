@@ -831,12 +831,12 @@ void digital_tg_recv_atr_req(struct nfc_digital_dev *ddev, void *arg,
 		goto exit;
 
 	gb_len = resp->len - sizeof(struct digital_atr_req);
+	ddev->poll_tech_count = 0;
+
 	rc = nfc_tm_activated(ddev->nfc_dev, NFC_PROTO_NFC_DEP_MASK,
 			      NFC_COMM_PASSIVE, atr_req->gb, gb_len);
 	if (rc)
 		goto exit;
-
-	ddev->poll_tech_count = 0;
 
 	rc = 0;
 exit:

@@ -375,11 +375,11 @@ int digital_target_found(struct nfc_digital_dev *ddev,
 		return rc;
 
 	target->supported_protocols = (1 << protocol);
+	ddev->poll_tech_count = 0;
+
 	rc = nfc_targets_found(ddev->nfc_dev, target, 1);
 	if (rc)
 		return rc;
-
-	ddev->poll_tech_count = 0;
 
 	return 0;
 }
