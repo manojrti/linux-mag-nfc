@@ -29,6 +29,8 @@
 #include <net/nfc/nfc.h>
 #include <net/nfc/digital.h>
 
+#define TRF7970A_FIFO_WRAP_WORKAROUND	/* XXX */
+
 /* There are 3 ways the host can communicate with the trf7970a:
  * parallel mode, SPI with Slave Select (SS) mode, and SPI without
  * SS mode.  The driver only supports the two SPI modes.
@@ -307,6 +309,15 @@
 		 TRF7970A_IRQ_STATUS_PARITY_ERROR |		\
 		 TRF7970A_IRQ_STATUS_CRC_ERROR)
 
+#define TRF7970A_COLLISION_IRQ_MASK_EN_IRQ_NORESP	BIT(0)
+#define TRF7970A_COLLISION_IRQ_MASK_EN_IRQ_COL		BIT(1)
+#define TRF7970A_COLLISION_IRQ_MASK_EN_IRQ_ERR3		BIT(2)
+#define TRF7970A_COLLISION_IRQ_MASK_EN_IRQ_ERR2		BIT(3)
+#define TRF7970A_COLLISION_IRQ_MASK_EN_IRQ_ERR1		BIT(4)
+#define TRF7970A_COLLISION_IRQ_MASK_EN_IRQ_FIFO		BIT(5)
+#define TRF7970A_COLLISION_IRQ_MASK_COL8		BIT(6)
+#define TRF7970A_COLLISION_IRQ_MASK_COL9		BIT(7)
+
 #define TRF7970A_RSSI_OSC_STATUS_RSSI_MASK	\
 		(BIT(2) | BIT(1) | BIT(0))
 #define TRF7970A_RSSI_OSC_STATUS_RSSI_X_MASK	\
@@ -564,14 +575,22 @@ static void trf7970a_send_err_upstream(struct trf7970a *trf, int errno)
 }
 
 static int trf7970a_transmit(struct trf7970a *trf, struct sk_buff *skb,
-		unsigned int len)
+		unsigned int len, unsigned int header_bytes)
 {
 	unsigned int timeout;
 	int ret;
+#ifdef TRF7970A_FIFO_WRAP_WORKAROUND /* XXX */
+	char *prefix;
+	unsigned int l;
+	u8 fifo_bytes;
+#endif
 
 	print_hex_dump_debug("trf7970a tx data: ", DUMP_PREFIX_NONE,
 			16, 1, skb->data, len, false);
 
+	tl_log(trf, TL_TYPE_REG_WRITE_CONT, 0, skb->data, len);
+
+#ifndef TRF7970A_FIFO_WRAP_WORKAROUND /* XXX */
 	ret = spi_write(trf->spi, skb->data, len);
 	if (ret) {
 		dev_err(trf->dev, "%s - Can't send tx data: %d\n", __func__,
@@ -597,6 +616,54 @@ static int trf7970a_transmit(struct trf7970a *trf, struct sk_buff *skb,
 				timeout = trf->timeout;
 		}
 	}
+#else
+	fifo_bytes = 0;
+
+	for (;;) {
+		l = min(len, (unsigned int)(TRF7970A_FIFO_SIZE - fifo_bytes));
+
+		ret = spi_write(trf->spi, skb->data, l + header_bytes);
+		if (ret) {
+			dev_err(trf->dev, "%s - Can't send tx data: %d\n",
+					__func__, ret);
+			return ret;
+		}
+
+		skb_pull(skb, l + header_bytes);
+
+		header_bytes = 1;
+		prefix = skb_push(skb, header_bytes);
+		prefix[0] = TRF7970A_CMD_BIT_CONTINUOUS |
+					TRF7970A_FIFO_IO_REGISTER;
+
+		len -= l;
+		if (!len)
+			break;
+
+		usleep_range(500, 750);
+
+		ret = trf7970a_read(trf, TRF7970A_FIFO_STATUS, &fifo_bytes);
+		if (ret)
+			return ret;
+
+		fifo_bytes &= ~TRF7970A_FIFO_STATUS_OVERFLOW;
+
+		if (fifo_bytes == TRF7970A_FIFO_SIZE)
+			return -EIO;
+	}
+
+	if (trf->issue_eof) {
+		trf->state = TRF7970A_ST_WAIT_TO_ISSUE_EOF;
+		timeout = TRF7970A_WAIT_TO_ISSUE_ISO15693_EOF;
+	} else {
+		trf->state = TRF7970A_ST_WAIT_FOR_RX_DATA;
+
+		if (!trf->timeout)
+			timeout = TRF7970A_WAIT_FOR_TX_IRQ;
+		else
+			timeout = trf->timeout;
+	}
+#endif
 
 	dev_dbg(trf->dev, "Setting timeout for %d ms, state: %d\n", timeout,
 			trf->state);
@@ -608,6 +675,7 @@ static int trf7970a_transmit(struct trf7970a *trf, struct sk_buff *skb,
 
 static void trf7970a_fill_fifo(struct trf7970a *trf)
 {
+#ifndef TRF7970A_FIFO_WRAP_WORKAROUND /* XXX */
 	struct sk_buff *skb = trf->tx_skb;
 	unsigned int len;
 #if 1 /* XXX */
@@ -650,6 +718,9 @@ static void trf7970a_fill_fifo(struct trf7970a *trf)
 	ret = trf7970a_transmit(trf, skb, len);
 	if (ret)
 		trf7970a_send_err_upstream(trf, ret);
+#else
+	dev_err(trf->dev, "*********** AAAAAHHHHHHHHHH *************\n");
+#endif
 }
 
 static void trf7970a_drain_fifo(struct trf7970a *trf, u8 status)
@@ -1425,8 +1496,10 @@ static int trf7970a_send_cmd(struct nfc_digital_dev *ddev,
 		prefix[4] = ((len & 0x0f) << 4);
 	}
 
+#ifndef TRF7970A_FIFO_WRAP_WORKAROUND /* XXX */
 	len = min_t(int, len, TRF7970A_FIFO_SIZE);
 	len += TRF7970A_TX_SKB_HEADROOM;
+#endif
 
 	usleep_range(1000, 2000); /* XXX get rid of this?? */
 
@@ -1439,7 +1512,7 @@ static int trf7970a_send_cmd(struct nfc_digital_dev *ddev,
 	}
 #endif
 
-	ret = trf7970a_transmit(trf, skb, len);
+	ret = trf7970a_transmit(trf, skb, len, 5);
 	if (ret) {
 		kfree_skb(trf->rx_skb);
 		trf->rx_skb = NULL;
