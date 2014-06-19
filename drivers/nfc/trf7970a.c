@@ -610,7 +610,7 @@ static void trf7970a_fill_fifo(struct trf7970a *trf)
 {
 	struct sk_buff *skb = trf->tx_skb;
 	unsigned int len;
-#if 0 /* XXX */
+#if 1 /* XXX */
 	char *prefix;
 #endif
 	int ret;
@@ -635,7 +635,7 @@ static void trf7970a_fill_fifo(struct trf7970a *trf)
 	len = TRF7970A_FIFO_SIZE - fifo_bytes;
 	len = min(skb->len, len);
 
-#if 0 /* XXX */
+#if 1 /* XXX */
 	prefix = skb_push(skb, 1);
 	prefix[0] = TRF7970A_CMD_BIT_CONTINUOUS | TRF7970A_FIFO_IO_REGISTER;
 	len++;
@@ -1343,6 +1343,7 @@ static int trf7970a_send_cmd(struct nfc_digital_dev *ddev,
 	char *prefix;
 	unsigned int len;
 	int ret;
+	u8 status;
 
 	dev_dbg(trf->dev, "New request - state: %d, timeout: %d ms, len: %d\n",
 			trf->state, timeout, skb->len);
@@ -1420,9 +1421,19 @@ static int trf7970a_send_cmd(struct nfc_digital_dev *ddev,
 		prefix[4] = ((len & 0x0f) << 4);
 	}
 
-	len = min_t(int, skb->len, TRF7970A_FIFO_SIZE);
+	len = min_t(int, len, TRF7970A_FIFO_SIZE);
+	len += TRF7970A_TX_SKB_HEADROOM;
 
 	usleep_range(1000, 2000); /* XXX get rid of this?? */
+
+#if 1 /* XXX */
+	ret = gpio_get_value(trf->spi->irq);
+	if (ret) {
+		ret = trf7970a_read_irqstatus(trf, &status);
+		if (ret)
+			goto out_err;
+	}
+#endif
 
 	ret = trf7970a_transmit(trf, skb, len);
 	if (ret) {
