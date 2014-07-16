@@ -373,6 +373,8 @@ struct trf7970a {
 	struct delayed_work		timeout_work;
 };
 
+static void trf7970a_switch_rf_off(struct trf7970a *trf);
+
 
 static int trf7970a_cmd(struct trf7970a *trf, u8 opcode)
 {
@@ -480,7 +482,8 @@ static void trf7970a_send_upstream(struct trf7970a *trf)
 				16, 1, trf->rx_skb->data, trf->rx_skb->len,
 				false);
 
-	trf->state = TRF7970A_ST_IDLE;
+	if (!IS_ERR(trf->rx_skb))
+		trf->state = TRF7970A_ST_IDLE;
 
 	if (trf->aborting) {
 		dev_dbg(trf->dev, "Abort process complete\n");
@@ -504,6 +507,8 @@ static void trf7970a_send_err_upstream(struct trf7970a *trf, int errno)
 
 	kfree_skb(trf->rx_skb);
 	trf->rx_skb = ERR_PTR(errno);
+
+	trf7970a_switch_rf_off(trf);
 
 	trf7970a_send_upstream(trf);
 }
@@ -859,6 +864,12 @@ err_out:
 
 static void trf7970a_switch_rf_off(struct trf7970a *trf)
 {
+	if ((trf->state == TRF7970A_ST_PWR_OFF) ||
+			(trf->state == TRF7970A_ST_RF_OFF))
+		return;
+
+	dev_dbg(trf->dev, "Switching rf off\n");
+
 	dev_dbg(trf->dev, "Switching rf off\n");
 
 	trf->chip_status_ctrl &= ~TRF7970A_CHIP_STATUS_RF_ON;
