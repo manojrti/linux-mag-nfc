@@ -870,12 +870,27 @@ static int digital_tg_send_ack(struct nfc_digital_dev *ddev,
 
 	ddev->skb_add_crc(skb);
 
+	ddev->saved_skb = skb_get(skb);
+	ddev->saved_skb_len = skb->len;
+
 	rc = digital_tg_send_cmd(ddev, skb, 1500, digital_tg_recv_dep_req,
 				 data_exch);
-	if (rc)
+	if (rc) {
 		kfree_skb(skb);
+		kfree_skb(ddev->saved_skb);
+		ddev->saved_skb = NULL;
+	}
 
 	return rc;
+}
+
+static int digital_tg_send_saved_skb(struct nfc_digital_dev *ddev)
+{
+	skb_get(ddev->saved_skb);
+	skb_push(ddev->saved_skb, ddev->saved_skb_len);
+
+	return digital_tg_send_cmd(ddev, ddev->saved_skb, 1500,
+				   digital_tg_recv_dep_req, NULL);
 }
 
 static void digital_tg_recv_dep_req(struct nfc_digital_dev *ddev, void *arg,
@@ -954,6 +969,9 @@ static void digital_tg_recv_dep_req(struct nfc_digital_dev *ddev, void *arg,
 			goto exit;
 		}
 
+		kfree_skb(ddev->saved_skb);
+		ddev->saved_skb = NULL;
+
 		resp = digital_recv_dep_data_gather(ddev, pfb, resp,
 						    digital_tg_send_ack, NULL);
 		if (IS_ERR(resp)) {
@@ -972,21 +990,40 @@ static void digital_tg_recv_dep_req(struct nfc_digital_dev *ddev, void *arg,
 		rc = 0;
 		break;
 	case DIGITAL_NFC_DEP_PFB_ACK_NACK_PDU:
-		if (DIGITAL_NFC_DEP_PFB_PNI(pfb) != ddev->curr_nfc_dep_pni) {
-			PROTOCOL_ERR("14.12.3.4");
-			rc = -EIO;
-			goto exit;
-		}
+		if (!DIGITAL_NFC_DEP_NACK_BIT_SET(pfb)) { /* ACK */
+			if ((DIGITAL_NFC_DEP_PFB_PNI(pfb) !=
+						ddev->curr_nfc_dep_pni) ||
+			    !ddev->chaining_skb || !ddev->saved_skb) {
+				rc = -EIO;
+				goto exit;
+			}
 
-		if (ddev->chaining_skb && !DIGITAL_NFC_DEP_NACK_BIT_SET(pfb)) {
+			kfree_skb(ddev->saved_skb);
+			ddev->saved_skb = NULL;
+
 			rc = digital_tg_send_dep_res(ddev, ddev->chaining_skb);
 			if (rc)
 				goto exit;
 
 			return;
+		} else { /* NACK */
+			if ((DIGITAL_NFC_DEP_PFB_PNI(pfb + 1) !=
+						ddev->curr_nfc_dep_pni) ||
+			    !ddev->saved_skb) {
+				rc = -EIO;
+				goto exit;
+			}
+
+			rc = digital_tg_send_saved_skb(ddev);
+			if (rc) {
+				kfree_skb(ddev->saved_skb);
+				goto exit;
+			}
+
+			return;
 		}
 
-		pr_err("Received a ACK/NACK PDU\n");
+		pr_err("Received unexpected ACK/NACK PDU\n");
 		rc = -EINVAL;
 		goto exit;
 		break;
@@ -1002,6 +1039,9 @@ static void digital_tg_recv_dep_req(struct nfc_digital_dev *ddev, void *arg,
 exit:
 	kfree_skb(ddev->chaining_skb);
 	ddev->chaining_skb = NULL;
+
+	kfree_skb(ddev->saved_skb);
+	ddev->saved_skb = NULL;
 
 	if (rc)
 		kfree_skb(resp);
@@ -1041,6 +1081,9 @@ int digital_tg_send_dep_res(struct nfc_digital_dev *ddev, struct sk_buff *skb)
 
 	ddev->skb_add_crc(tmp_skb);
 
+	ddev->saved_skb = skb_get(tmp_skb);
+	ddev->saved_skb_len = tmp_skb->len;
+
 	rc = digital_tg_send_cmd(ddev, tmp_skb, 1500, digital_tg_recv_dep_req,
 				 NULL);
 	if (rc) {
@@ -1049,6 +1092,9 @@ int digital_tg_send_dep_res(struct nfc_digital_dev *ddev, struct sk_buff *skb)
 
 		kfree_skb(chaining_skb);
 		ddev->chaining_skb = NULL;
+
+		kfree_skb(ddev->saved_skb);
+		ddev->saved_skb = NULL;
 	}
 
 	return rc;
