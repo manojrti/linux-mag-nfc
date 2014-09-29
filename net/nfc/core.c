@@ -693,10 +693,12 @@ int nfc_tm_activated(struct nfc_dev *dev, u32 protocol, u8 comm_mode,
 
 	dev->rf_mode = NFC_RF_TARGET;
 
+	rc = nfc_genl_tm_activated(dev, protocol);
+	if (rc < 0)
+		goto out;
+
 	if (protocol == NFC_PROTO_NFC_DEP_MASK)
 		nfc_dep_link_is_up(dev, 0, comm_mode, NFC_RF_TARGET);
-
-	rc = nfc_genl_tm_activated(dev, protocol);
 
 out:
 	device_unlock(&dev->dev);
